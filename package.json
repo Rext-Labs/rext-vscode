@@ -2,20 +2,70 @@
   "name": "rext",
   "displayName": "Rext",
   "description": "Smart-HTTP Client for VS Code",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
-    "vscode": "^1.109.0"
+    "vscode": "^1.75.0"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:rext.runCurrentFile",
+    "onLanguage:rext"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "rext.helloWorld",
-        "title": "Hello World"
+        "command": "rext.runCurrentFile",
+        "title": "Rext: Run Current Request"
+      },
+      {
+        "command": "rext.runAll",
+        "title": "Rext: Run All Requests in File"
+      },
+      {
+        "command": "rext.switchEnvironment",
+        "title": "Rext: Switch Environment"
+      }
+    ],
+    "languages": [
+      {
+        "id": "rext",
+        "aliases": [
+          "Rext",
+          "rext"
+        ],
+        "extensions": [
+          ".rext"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "rext",
+        "scopeName": "source.rext",
+        "path": "./syntaxes/rext.tmLanguage.json"
+      }
+    ],
+    "codeLens": [
+      {
+        "command": "rext.runCurrentFile",
+        "title": "Run Rext"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "rext.runCurrentFile",
+        "key": "ctrl+enter",
+        "when": "editorLangId == rext"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "rext",
+        "path": "./snippets/rext.code-snippets"
       }
     ]
   },
@@ -28,13 +78,16 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.109.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
-    "typescript-eslint": "^8.54.0",
+    "@types/vscode": "^1.75.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2"
+    "typescript-eslint": "^8.54.0"
+  },
+  "dependencies": {
+    "axios": "^1.13.5"
   }
 }
