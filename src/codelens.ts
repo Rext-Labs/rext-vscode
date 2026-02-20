@@ -6,6 +6,14 @@ export class RextCodeLensProvider implements vscode.CodeLensProvider {
     const lenses: vscode.CodeLens[] = [];
     const requests = parseRext(document.getText());
 
+    // Run All lens at the top of the file
+    if (requests.length > 1) {
+      lenses.push(new vscode.CodeLens(new vscode.Range(0, 0, 0, 0), {
+        title: '▶▶ Run All',
+        command: 'rext.runAll'
+      }));
+    }
+
     requests.forEach((req, index) => {
       // Encontrar la primera línea con contenido real (saltar ### y vacías)
       let lensLine = req.startLine;

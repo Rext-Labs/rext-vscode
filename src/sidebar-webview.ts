@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseRext } from './parser';
+import { parseRext, parseRextFull } from './parser';
 import { VariableStore } from './variables';
 import { EnvironmentManager } from './environment';
 
@@ -101,12 +101,38 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
                     this.refresh();
                     break;
                 }
+                case 'runAllFile': {
+                    const filePath = msg.filePath;
+                    const fileContent = fs.readFileSync(filePath, 'utf-8');
+                    const { parseRext } = require('./parser');
+                    const { runRequest } = require('./runner');
+                    const { EnvironmentManager } = require('./environment');
+                    const { VariableStore } = require('./variables');
+                    const { RextResultsPanel } = require('./panel');
+
+                    EnvironmentManager.loadActiveEnvironment();
+                    VariableStore.loadCollection(filePath);
+
+                    const requests = parseRext(fileContent);
+                    for (const req of requests) {
+                        RextResultsPanel.displayPending({
+                            name: req.name,
+                            method: req.method,
+                            url: VariableStore.replaceInString(req.url)
+                        });
+                        const result = await runRequest(req, requests);
+                        RextResultsPanel.updatePending(result);
+                        this.addHistoryEntry(result, req.id);
+                    }
+                    this.refresh();
+                    break;
+                }
             }
         });
     }
 
     addHistoryEntry(result: any, requestId?: string) {
-        this._history.unshift({
+        const entry: any = {
             id: requestId,
             name: result.name,
             method: result.method || 'GET',
@@ -114,7 +140,16 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
             status: result.status || 0,
             duration: result.duration || 0,
             timestamp: Date.now()
-        });
+        };
+        if (result.preResults && result.preResults.length > 0) {
+            entry.preResults = result.preResults.map((pr: any) => ({
+                name: pr.name || 'pre',
+                method: pr.method || 'GET',
+                status: pr.status || 0,
+                duration: pr.duration || 0
+            }));
+        }
+        this._history.unshift(entry);
         if (this._history.length > RextSidebarProvider.MAX_HISTORY) {
             this._history.length = RextSidebarProvider.MAX_HISTORY;
         }
@@ -132,12 +167,12 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
 
     private async _getExplorerData() {
         const files: any[] = [];
+        const allConfigs: any[] = [];
         const uris = await vscode.workspace.findFiles('**/*.rext', '**/node_modules/**');
         for (const uri of uris.sort((a, b) => a.fsPath.localeCompare(b.fsPath))) {
             try {
                 const content = fs.readFileSync(uri.fsPath, 'utf-8');
-                const parsed = parseRext(content);
-                const collection = parsed[0]?.collection || undefined;
+                const { requests: parsed, configs } = parseRextFull(content);
                 const requests = parsed.map(r => ({
                     id: r.id,
                     name: r.name || r.method + ' ' + r.url,
@@ -153,9 +188,20 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
                     path: uri.fsPath,
                     requests
                 });
+                configs.forEach(c => allConfigs.push({
+                    collection: c.collection,
+                    baseUrl: c.baseUrl,
+                    headers: c.headers,
+                    timeout: c.timeout,
+                    retries: c.retries,
+                    assertions: c.assertions,
+                    filePath: uri.fsPath,
+                    startLine: c.startLine,
+                    endLine: c.endLine
+                }));
             } catch { /* skip */ }
         }
-        return { files };
+        return { files, configs: allConfigs };
     }
     private async _modifyRequestDirective(filePath: string, requestLine: number, directive: string, value: string) {
         const uri = vscode.Uri.file(filePath);
@@ -269,7 +315,7 @@ body{font-family:var(--vscode-font-family);font-size:12px;color:var(--vscode-for
 .chv{font-size:10px;opacity:.4;transition:transform .15s;display:inline-block}
 .chv.open{transform:rotate(90deg)}
 .fn{font-weight:500}
-.rc{opacity:.35;font-size:10px;margin-left:auto}
+.rc{opacity:.35;font-size:10px;margin-left:4px}
 .fr{padding-left:8px}
 
 .ri{padding:4px 8px;cursor:pointer;border-radius:3px;display:flex;align-items:center;gap:8px;font-size:11px;transition:background .1s;position:relative}
@@ -287,8 +333,12 @@ body{font-family:var(--vscode-font-family);font-size:12px;color:var(--vscode-for
 .ri:hover .play-btn{opacity:.7}
 .play-btn:hover{opacity:1!important;background:rgba(76,175,80,.15)}
 
-.hi{padding:7px 8px;border-radius:4px;display:flex;align-items:center;gap:8px;margin-bottom:2px;transition:background .1s}
+.hi{padding:7px 8px;border-radius:4px;display:flex;align-items:center;gap:8px;margin-bottom:2px;transition:background .1s;flex-wrap:wrap}
 .hi:hover{background:var(--vscode-list-hoverBackground)}
+.pre-group{width:100%}
+.pre-group.collapsed .pre-children{display:none}
+.pre-group.collapsed .chv{transform:rotate(0deg)!important}
+.pre-group .chv{transform:rotate(90deg);transition:transform .15s;display:inline-block}
 .sb{font-size:9px;font-weight:700;padding:2px 5px;border-radius:3px;min-width:28px;text-align:center}
 .s2{background:rgba(76,175,80,.15);color:#4caf50}
 .s4{background:rgba(244,67,54,.15);color:#f44336}
@@ -332,6 +382,16 @@ body{font-family:var(--vscode-font-family);font-size:12px;color:var(--vscode-for
 .ctx-item:hover{background:var(--vscode-menu-selectionBackground,#094771)}
 .ctx-sep{height:1px;margin:4px 8px;background:var(--vscode-menu-separatorBackground,#454545)}
 .drag-over{outline:2px dashed #4ec970;outline-offset:-2px;background:rgba(78,201,112,.08)!important;border-radius:4px}
+.cfg-gear{margin-left:auto;opacity:.3;cursor:pointer;transition:opacity .15s;display:flex;align-items:center}
+.cfg-gear:hover{opacity:.8}
+.cfg-gear svg{width:14px;height:14px}
+.cfg-body{padding:4px 0 4px 4px}
+.cfg-row{font-size:10px;padding:2px 4px;display:flex;gap:6px;align-items:baseline}
+.cfg-key{color:#4ec970;font-weight:600;min-width:55px}
+.cfg-val{opacity:.8}
+.cfg-indent{padding-left:16px}
+.cfg-hk{color:var(--vscode-symbolIcon-propertyForeground,#9cdcfe);opacity:.8}
+.cfg-hv{opacity:.65}
 
 .content::-webkit-scrollbar{width:5px}
 .content::-webkit-scrollbar-thumb{background:rgba(255,255,255,.08);border-radius:3px}
@@ -431,6 +491,16 @@ body{font-family:var(--vscode-font-family);font-size:12px;color:var(--vscode-for
     }
 
     // Request item click (open file)
+    // Config gear click
+    const gear = target.closest('.cfg-gear');
+    if (gear) {
+      e.stopPropagation();
+      var collChildren = gear.closest('.coll-header').nextElementSibling;
+      var body = collChildren.querySelector('.cfg-body');
+      if (body) { body.style.display = body.style.display === 'none' ? 'block' : 'none'; }
+      return;
+    }
+
     const ri = target.closest('.ri');
     if (ri && !target.closest('.play-btn')) {
       vscode.postMessage({command:'openFile', filePath: ri.dataset.file, line: parseInt(ri.dataset.line)});
@@ -474,6 +544,8 @@ body{font-family:var(--vscode-font-family);font-size:12px;color:var(--vscode-for
         vscode.postMessage({command:'moveToCollection', filePath: fp, line: parseInt(ctxItem.dataset.line)});
       } else if (action === 'newRequest') {
         vscode.postMessage({command:'newRequest', filePath: fp});
+      } else if (action === 'runAllFile') {
+        vscode.postMessage({command:'runAllFile', filePath: fp});
       }
       const menu = document.querySelector('.ctx-menu');
       if (menu) menu.remove();
@@ -483,6 +555,27 @@ body{font-family:var(--vscode-font-family);font-size:12px;color:var(--vscode-for
 
   // --- Context menu ---
   document.addEventListener('contextmenu', function(e) {
+    // File header context menu
+    const fh = e.target.closest('.fh');
+    if (fh) {
+      e.preventDefault();
+      const old = document.querySelector('.ctx-menu');
+      if (old) old.remove();
+      const fp = fh.dataset.file;
+      const menu = document.createElement('div');
+      menu.className = 'ctx-menu';
+      menu.style.left = e.clientX + 'px';
+      menu.style.top = e.clientY + 'px';
+      menu.innerHTML =
+        '<div class="ctx-item" data-action="runAllFile" data-file="' + esc(fp) + '">▶▶ Run All</div>' +
+        '<div class="ctx-item" data-action="open" data-file="' + esc(fp) + '" data-line="0">📄 Open in Editor</div>' +
+        '<div class="ctx-sep"></div>' +
+        '<div class="ctx-item" data-action="newRequest" data-file="' + esc(fp) + '">➕ New Request</div>';
+      document.body.appendChild(menu);
+      return;
+    }
+
+    // Request item context menu
     const ri = e.target.closest('.ri');
     if (!ri) return;
     e.preventDefault();
@@ -573,7 +666,7 @@ body{font-family:var(--vscode-font-family);font-size:12px;color:var(--vscode-for
         return !filterText || r.name.toLowerCase().indexOf(filterText) !== -1 || r.method.toLowerCase().indexOf(filterText) !== -1;
       });
       if (filterText && !reqs.length) return;
-      html += '<div class="file-group"><div class="fh" onclick="toggleNext(this)"><span class="chv open">\u25b6</span><span class="fn">' + escHtml(f.name) + '</span><span class="rc">' + f.requests.length + '</span></div><div class="fr">';
+      html += '<div class="file-group"><div class="fh" data-file="' + esc(f.path) + '" onclick="toggleNext(this)"><span class="chv open">\u25b6</span><span class="fn">' + escHtml(f.name) + '</span><span class="rc">' + f.requests.length + '</span></div><div class="fr">';
       reqs.forEach(function(r, i) { html += renderReqItem(f, r, i); });
       html += '</div></div>';
     });
@@ -602,9 +695,28 @@ body{font-family:var(--vscode-font-family);font-size:12px;color:var(--vscode-for
     });
 
     var html = '';
+    var cfgs = explorerData.configs || [];
     Object.keys(collections).forEach(function(colName) {
       var items = collections[colName];
-      html += '<div class="file-group"><div class="coll-header" onclick="toggleNext(this)"><span class="chv open">\u25b6</span><svg class="coll-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M14.5 3H7.71l-.85-.85L6.51 2h-5l-.5.5v11l.5.5h13l.5-.5v-10L14.5 3zm-.51 8.49V13h-12V7h12v4.49z"/></svg><span>' + escHtml(colName) + '</span><span class="rc">' + items.length + '</span></div><div class="coll-children">';
+      var cfg = cfgs.find(function(c) { return c.collection === colName; }) || cfgs.find(function(c) { return !c.collection; });
+      var gearBtn = cfg ? '<span class="cfg-gear" title="Config"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M9.1 4.4L8.6 2H7.4l-.5 2.4-.7.3-2-1.3-.9.8 1.3 2-.3.7L2 7.4v1.2l2.4.5.3.7-1.3 2 .8.8 2-1.3.7.3.5 2.4h1.2l.5-2.4.7-.3 2 1.3.8-.8-1.3-2 .3-.7 2.4-.5V7.4l-2.4-.5-.3-.7 1.3-2-.8-.8-2 1.3-.7-.3zM9.4 1l.5 2.4L12 2.1l2 2-1.3 2.1 2.4.5v2.8l-2.4.5L14 12l-2 2-2.1-1.3-.5 2.4H6.6l-.5-2.4L4 14l-2-2 1.3-2.1L1 9.4V6.6l2.4-.5L2.1 4l2-2 2.1 1.3L6.6 1h2.8zM8 10a2 2 0 100-4 2 2 0 000 4z"/></svg></span>' : '';
+      var configBody = '';
+      if (cfg) {
+        configBody = '<div class="cfg-body" style="display:none">';
+        if (cfg.baseUrl) configBody += '<div class="cfg-row"><span class="cfg-key">baseUrl</span><span class="cfg-val">' + escHtml(cfg.baseUrl) + '</span></div>';
+        if (cfg.timeout) configBody += '<div class="cfg-row"><span class="cfg-key">timeout</span><span class="cfg-val">' + cfg.timeout + 'ms</span></div>';
+        if (cfg.retries) configBody += '<div class="cfg-row"><span class="cfg-key">retries</span><span class="cfg-val">' + cfg.retries + '</span></div>';
+        if (cfg.headers && Object.keys(cfg.headers).length) {
+          configBody += '<div class="cfg-row"><span class="cfg-key">headers</span></div>';
+          Object.keys(cfg.headers).forEach(function(k) { configBody += '<div class="cfg-row cfg-indent"><span class="cfg-hk">' + escHtml(k) + ':</span> <span class="cfg-hv">' + escHtml(cfg.headers[k]) + '</span></div>'; });
+        }
+        if (cfg.assertions && cfg.assertions.length) {
+          configBody += '<div class="cfg-row"><span class="cfg-key">assert</span></div>';
+          cfg.assertions.forEach(function(a) { configBody += '<div class="cfg-row cfg-indent"><span class="cfg-hv">' + escHtml(a.type + ' == ' + a.expected) + '</span></div>'; });
+        }
+        configBody += '</div>';
+      }
+      html += '<div class="file-group"><div class="coll-header" onclick="toggleNext(this)"><span class="chv open">\\u25b6</span><svg class="coll-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M14.5 3H7.71l-.85-.85L6.51 2h-5l-.5.5v11l.5.5h13l.5-.5v-10L14.5 3zm-.51 8.49V13h-12V7h12v4.49z"/></svg><span>' + escHtml(colName) + '</span><span class="rc">' + items.length + '</span>' + gearBtn + '</div><div class="coll-children">' + configBody;
       var groups = {};
       var ungrouped = [];
       items.forEach(function(item) {
@@ -664,16 +776,41 @@ body{font-family:var(--vscode-font-family);font-size:12px;color:var(--vscode-for
     }
   }
 
+  function toggleCfg(gearEl) {
+    var collChildren = gearEl.closest('.coll-header').nextElementSibling;
+    var body = collChildren.querySelector('.cfg-body');
+    if (body) {
+      body.style.display = body.style.display === 'none' ? 'block' : 'none';
+    }
+  }
+
   function renderHistory() {
     var c = document.getElementById('hc');
     if (!data.history.length) { c.innerHTML = '<div class="em">No requests yet</div>'; return; }
     var html = '';
-    data.history.forEach(function(h) {
+    data.history.forEach(function(h, idx) {
       if (filterText && (h.name||h.url).toLowerCase().indexOf(filterText) === -1 && h.method.toLowerCase().indexOf(filterText) === -1) return;
       var sc = h.status >= 200 && h.status < 300 ? 's2' : h.status >= 500 ? 's5' : 's4';
       var nm = h.name || (h.url.split('/').pop()) || h.url;
       var tm = new Date(h.timestamp).toLocaleTimeString();
-      html += '<div class="hi"><span class="mb b-' + h.method + '">' + h.method + '</span><div class="hinfo"><div class="hn">' + escHtml(nm) + '</div><div class="hm">' + tm + '</div></div><span class="sb ' + sc + '">' + h.status + '</span><span class="hd">' + h.duration + 'ms</span></div>';
+      // Pre-results
+      var preHtml = '';
+      if (h.preResults && h.preResults.length > 0) {
+        preHtml += '<div class="pre-group collapsed" onclick="event.stopPropagation();this.classList.toggle(&quot;collapsed&quot;)" style="cursor:pointer;margin-top:4px">';
+        preHtml += '<div style="font-size:0.7em;opacity:0.5;text-transform:uppercase;letter-spacing:0.5px;padding:2px 0"><span class="chv open" style="font-size:8px;margin-right:4px">▶</span>⚡ Pre-requests (' + h.preResults.length + ')</div>';
+        preHtml += '<div class="pre-children" onclick="event.stopPropagation()">';
+        h.preResults.forEach(function(pr) {
+          var psc = pr.status >= 200 && pr.status < 300 ? 's2' : 's5';
+          preHtml += '<div style="margin-left:12px;border-left:2px solid var(--vscode-button-background);padding:2px 8px;font-size:0.85em;opacity:0.8">';
+          preHtml += '<span class="mb b-' + pr.method + '" style="font-size:0.8em">' + pr.method + '</span> ';
+          preHtml += '<span>' + escHtml(pr.name) + '</span> ';
+          preHtml += '<span class="sb ' + psc + '" style="font-size:0.75em">' + pr.status + '</span> ';
+          preHtml += '<span class="hd" style="font-size:0.75em">' + pr.duration + 'ms</span>';
+          preHtml += '</div>';
+        });
+        preHtml += '</div></div>';
+      }
+      html += '<div class="hi"><span class="mb b-' + h.method + '">' + h.method + '</span><div class="hinfo"><div class="hn">' + escHtml(nm) + '</div><div class="hm">' + tm + '</div></div><span class="sb ' + sc + '">' + h.status + '</span><span class="hd">' + h.duration + 'ms</span>' + preHtml + '</div>';
     });
     c.innerHTML = html || '<div class="em">No matches</div>';
   }

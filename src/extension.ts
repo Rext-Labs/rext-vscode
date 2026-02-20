@@ -6,6 +6,8 @@ import { RextCodeLensProvider } from './codelens';
 import { EnvironmentManager } from './environment';
 import { VariableStore } from './variables';
 import { RextSidebarProvider } from './sidebar-webview';
+import { RextCompletionProvider } from './completion';
+import { RextInlayHintsProvider } from './inlay-hints';
 
 function generateId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -53,7 +55,7 @@ export function activate(context: vscode.ExtensionContext) {
         method: requestToRun.method,
         url: VariableStore.replaceInString(requestToRun.url)
       });
-      const result = await runRequest(requestToRun);
+      const result = await runRequest(requestToRun, requests);
       RextResultsPanel.updatePending(result);
       sidebarProvider.addHistoryEntry(result, requestToRun.id);
       sidebarProvider.refresh();
@@ -77,7 +79,7 @@ export function activate(context: vscode.ExtensionContext) {
         method: req.method,
         url: VariableStore.replaceInString(req.url)
       });
-      const result = await runRequest(req);
+      const result = await runRequest(req, requests);
       RextResultsPanel.updatePending(result);
       sidebarProvider.addHistoryEntry(result, req.id);
     }
@@ -125,7 +127,7 @@ export function activate(context: vscode.ExtensionContext) {
           method: requestToRun.method,
           url: VariableStore.replaceInString(requestToRun.url)
         });
-        const result = await runRequest(requestToRun);
+        const result = await runRequest(requestToRun, requests);
         RextResultsPanel.updatePending(result);
         sidebarProvider.addHistoryEntry(result, requestToRun.id);
         sidebarProvider.refresh();
@@ -256,6 +258,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     runCurrent, runAll, switchEnv, runFromSidebar,
     saveListener, diagnosticCollection, diagChangeListener, diagOpenListener, quickFixProvider,
-    vscode.languages.registerCodeLensProvider({ language: 'rext' }, codelensProvider)
+    vscode.languages.registerCodeLensProvider({ language: 'rext' }, codelensProvider),
+    vscode.languages.registerCompletionItemProvider({ language: 'rext' }, new RextCompletionProvider(), ' '),
+    vscode.languages.registerInlayHintsProvider({ language: 'rext' }, new RextInlayHintsProvider())
   );
 }

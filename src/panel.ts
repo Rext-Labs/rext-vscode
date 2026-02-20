@@ -126,6 +126,12 @@ export class RextResultsPanel {
                     .status-err { background: #f44336; box-shadow: 0 0 5px #f44336; }
                     .status-pending { background: #2196f3; animation: pulse 1s infinite; }
                     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+                    .pre-item { margin-left: 18px; border-left: 2px solid var(--accent); opacity: 0.75; font-size: 0.9em; }
+                    .pre-label { padding: 4px 10px; font-size: 0.7em; opacity: 0.5; text-transform: uppercase; letter-spacing: 1px; }
+                    .pre-group { margin-bottom: 2px; }
+                    .pre-group.collapsed .pre-children { display: none; }
+                    .pre-chv { display: inline-block; transition: transform 0.15s; font-size: 8px; }
+                    .pre-group:not(.collapsed) .pre-chv { transform: rotate(90deg); }
 
                     /* Main Content */
                     #main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -146,6 +152,11 @@ export class RextResultsPanel {
                     
                     .search-box { margin-bottom: 10px; }
                     #search-input { width: 100%; padding: 6px; background: var(--vscode-input-background); color: var(--fg); border: 1px solid var(--border); border-radius: 2px; }
+                    
+                    .sub-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+                    .sub-tab { padding: 3px 10px; cursor: pointer; opacity: 0.5; font-size: 0.8em; border-radius: 10px; border: 1px solid var(--border); transition: all 0.15s; }
+                    .sub-tab:hover { opacity: 0.8; }
+                    .sub-tab.active { opacity: 1; background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
                     
                     table { width: 100%; border-collapse: collapse; }
                     td { padding: 8px; border-bottom: 1px solid var(--border); font-family: monospace; font-size: 0.9em; }
@@ -175,28 +186,43 @@ export class RextResultsPanel {
                         <div class="tabs">
                             <div class="tab active" onclick="switchTab('body')">Body</div>
                             <div class="tab" onclick="switchTab('headers')">Headers</div>
+                            <div class="tab" onclick="switchTab('cookies')">Cookies</div>
                         </div>
 
                         <div id="content-body">
                             <div class="search-box">
                                 <input type="text" id="search-input" placeholder="Filtrar en respuesta..." oninput="renderDetail()">
                             </div>
+                            <div class="sub-tabs">
+                                <div class="sub-tab active" onclick="switchBodyFormat('json')">JSON</div>
+                                <div class="sub-tab" onclick="switchBodyFormat('xml')">XML</div>
+                                <div class="sub-tab" onclick="switchBodyFormat('text')">Text</div>
+                                <div class="sub-tab" onclick="switchBodyFormat('preview')">Preview</div>
+                            </div>
                             <pre><code id="code-block" class="language-json"></code></pre>
+                            <div id="preview-frame" class="hidden"></div>
                         </div>
 
                         <div id="content-headers" class="hidden">
                             <table id="headers-table"></table>
+                        </div>
+
+                        <div id="content-cookies" class="hidden">
+                            <table id="cookies-table"></table>
                         </div>
                     </div>
                 </div>
 
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
                 <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markup.min.js"></script>
                 <script>
                     const vscodeApi = acquireVsCodeApi();
                     let history = ${historyJson};
                     let currentIndex = 0;
                     let currentTab = 'body';
+                    let bodyFormat = 'json';
+                    let selectedPreResult = null;
 
                     function renderHistory() {
                         const list = document.getElementById('history-list');
@@ -211,14 +237,30 @@ export class RextResultsPanel {
                                     </div>
                                 \`;
                             }
+                            let preHtml = '';
+                            if (req.preResults && req.preResults.length > 0) {
+                                preHtml = '<div class="pre-group collapsed" onclick="event.stopPropagation();this.classList.toggle(&quot;collapsed&quot;)" style="cursor:pointer">' +
+                                    '<div class="pre-label"><span class="pre-chv">▶</span> ⚡ Pre-requests (' + req.preResults.length + ')</div>' +
+                                    '<div class="pre-children" onclick="event.stopPropagation()">';
+                                preHtml += req.preResults.map((pr, pi) => {
+                                    const prOk = pr.status >= 200 && pr.status < 300;
+                                    return '<div class="history-item pre-item" onclick="selectPreResult(' + i + ',' + pi + ')" style="cursor:pointer">' +
+                                        '<span class="status-dot ' + (prOk ? 'status-2xx' : 'status-err') + '"></span>' +
+                                        '<span class="method">' + (pr.method?.toUpperCase() || 'GET') + '</span>' +
+                                        '<span style="opacity:0.8">' + (pr.name || 'pre') + '</span>' +
+                                        '<div style="font-size:0.7em;opacity:0.5;margin-top:3px">' + (pr.duration != null ? pr.duration + 'ms' : '') + '</div>' +
+                                    '</div>';
+                                }).join('');
+                                preHtml += '</div></div>';
+                            }
                             const isOk = req.status >= 200 && req.status < 300;
-                            return \`
+                            return preHtml + \`
                                 <div class="history-item \${i === currentIndex ? 'active' : ''}" onclick="selectRequest(\${i})">
                                     <span class="status-dot \${isOk ? 'status-2xx' : 'status-err'}"></span>
                                     <span class="method">\${req.method?.toUpperCase() || 'GET'}</span>
                                     <span style="opacity:0.8">\${req.name || req.url?.split('/').pop() || 'req'}</span>
                                     \${req.attempts > 1 ? '<span style="background:#ff9800;color:#000;border-radius:3px;padding:1px 5px;font-size:0.7em;margin-left:5px">⟳ ' + req.attempts + '/' + req.maxAttempts + '</span>' : ''}
-                                    <div style="font-size: 0.75em; opacity: 0.5; margin-top: 5px;">\${req.duration != null ? req.duration + 'ms' : ''}</div>
+                                    <div style="font-size: 0.75em; opacity: 0.5; margin-top: 5px;">\${req.duration != null ? req.duration + 'ms' : ''}\${req.size != null ? ' · ' + formatSize(req.size) : ''}</div>
                                 </div>
                             \`;
                         }).join('');
@@ -226,7 +268,20 @@ export class RextResultsPanel {
 
                     function selectRequest(index) {
                         currentIndex = index;
+                        selectedPreResult = null;
                         renderHistory();
+                        renderDetail();
+                    }
+
+                    function selectPreResult(parentIdx, preIdx) {
+                        currentIndex = parentIdx;
+                        selectedPreResult = history[parentIdx].preResults[preIdx];
+                        renderDetail();
+                    }
+
+                    function switchBodyFormat(fmt) {
+                        bodyFormat = fmt;
+                        document.querySelectorAll('.sub-tab').forEach(t => t.classList.toggle('active', t.innerText.toLowerCase() === fmt));
                         renderDetail();
                     }
 
@@ -235,11 +290,12 @@ export class RextResultsPanel {
                         document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.innerText.toLowerCase() === tab));
                         document.getElementById('content-body').classList.toggle('hidden', tab !== 'body');
                         document.getElementById('content-headers').classList.toggle('hidden', tab !== 'headers');
+                        document.getElementById('content-cookies').classList.toggle('hidden', tab !== 'cookies');
                         renderDetail();
                     }
 
                     function renderDetail() {
-                        const req = history[currentIndex];
+                        const req = selectedPreResult || history[currentIndex];
                         if (!req) return;
 
                         const searchTerm = document.getElementById('search-input').value.toLowerCase();
@@ -249,6 +305,7 @@ export class RextResultsPanel {
                             : \`\${req.method || 'GET'} \${req.url || 'URL no disponible'}\`;
                         let statusHtml = \`<strong>Status:</strong> \${req.status}\`;
                         if (req.duration != null) { statusHtml += \` <span style="opacity:0.6;margin-left:10px">⏱ \${req.duration}ms</span>\`; }
+                        if (req.size != null) { statusHtml += \` <span style="opacity:0.6;margin-left:10px">📦 \${formatSize(req.size)}</span>\`; }
                         if (req.attempts > 1) { statusHtml += \` <span style="color:#ff9800;margin-left:10px">⟳ Intento \${req.attempts}/\${req.maxAttempts}</span>\`; }
                         document.getElementById('detail-status').innerHTML = statusHtml;
 
@@ -265,22 +322,51 @@ export class RextResultsPanel {
                         }
 
                         if (currentTab === 'body') {
-                            let json = JSON.stringify(req.data, null, 2);
+                            const raw = typeof req.data === 'string' ? req.data : JSON.stringify(req.data, null, 2);
                             const codeBlock = document.getElementById('code-block');
-                            
-                            if (searchTerm) {
-                                // Resaltado de búsqueda
-                                const regex = new RegExp('(' + searchTerm + ')', 'gi');
-                                const highlighted = json.replace(regex, '<mark>$1</mark>');
-                                codeBlock.innerHTML = highlighted;
+                            const previewFrame = document.getElementById('preview-frame');
+                            const preEl = codeBlock.parentElement;
+
+                            if (bodyFormat === 'preview') {
+                                preEl.classList.add('hidden');
+                                previewFrame.classList.remove('hidden');
+                                previewFrame.innerHTML = '<iframe sandbox="allow-same-origin" style="width:100%;min-height:400px;border:1px solid var(--border);border-radius:4px;background:#fff" srcdoc="' + raw.replace(/"/g, '&quot;') + '"></iframe>';
                             } else {
-                                codeBlock.textContent = json;
-                                Prism.highlightElement(codeBlock);
+                                previewFrame.classList.add('hidden');
+                                preEl.classList.remove('hidden');
+
+                                let formatted = raw;
+                                let lang = 'json';
+                                if (bodyFormat === 'json') {
+                                    try { formatted = JSON.stringify(JSON.parse(raw), null, 2); } catch(e) { formatted = raw; }
+                                    lang = 'json';
+                                } else if (bodyFormat === 'xml') {
+                                    lang = 'xml';
+                                } else {
+                                    lang = 'plaintext';
+                                }
+                                codeBlock.className = 'language-' + lang;
+
+                                if (searchTerm) {
+                                    const regex = new RegExp('(' + searchTerm + ')', 'gi');
+                                    codeBlock.innerHTML = formatted.replace(regex, '<mark>$1</mark>');
+                                } else {
+                                    codeBlock.textContent = formatted;
+                                    if (lang !== 'plaintext') { Prism.highlightElement(codeBlock); }
+                                }
                             }
-                        } else {
+                        } else if (currentTab === 'headers') {
                             const table = document.getElementById('headers-table');
                             table.innerHTML = Object.entries(req.headers)
                                 .map(([k, v]) => \`<tr><td><strong>\${k}</strong></td><td>\${v}</td></tr>\`).join('');
+                        } else if (currentTab === 'cookies') {
+                            const table = document.getElementById('cookies-table');
+                            if (req.cookies && req.cookies.length > 0) {
+                                table.innerHTML = '<tr><td><strong>Name</strong></td><td><strong>Value</strong></td><td><strong>Attributes</strong></td></tr>' +
+                                    req.cookies.map(c => \`<tr><td><strong>\${c.name}</strong></td><td style="word-break:break-all">\${c.value}</td><td style="opacity:0.6;font-size:0.85em">\${c.attributes}</td></tr>\`).join('');
+                            } else {
+                                table.innerHTML = '<tr><td style="opacity:0.5">No cookies in response</td></tr>';
+                            }
                         }
                     }
 
@@ -296,6 +382,12 @@ export class RextResultsPanel {
 
                     renderHistory();
                     renderDetail();
+
+                    function formatSize(bytes) {
+                        if (bytes < 1024) return bytes + ' B';
+                        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                        return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+                    }
                 </script>
             </body>
             </html>
@@ -309,5 +401,7 @@ export class RextResultsPanel {
             const x = this._disposables.pop();
             if (x) { x.dispose(); }
         }
+        // Cerrar el grupo de editor vacío para volver a una sola columna
+        vscode.commands.executeCommand('workbench.action.closeEditorsInGroup');
     }
 }

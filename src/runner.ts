@@ -18,7 +18,24 @@ async function executeRequest(method: string, url: string, data: any, headers: R
   });
 }
 
-export async function runRequest(request: RextRequest) {
+export async function runRequest(request: RextRequest, allRequests?: RextRequest[], _executedIds?: Set<string>): Promise<any> {
+  const preResults: any[] = [];
+
+  // --- Pre-request execution ---
+  if (request.preRequestIds && request.preRequestIds.length > 0 && allRequests) {
+    const executed = _executedIds || new Set<string>();
+    if (request.id) { executed.add(request.id); } // prevent cycles
+    for (const preId of request.preRequestIds) {
+      if (executed.has(preId)) { continue; } // skip already executed or cyclic
+      const preReq = allRequests.find(r => r.id === preId);
+      if (preReq) {
+        executed.add(preId);
+        const preResult = await runRequest(preReq, allRequests, executed);
+        preResults.push(preResult);
+      }
+    }
+  }
+
   // 1. Reemplazar variables antes de enviar
   const finalUrl = VariableStore.replaceInString(request.url);
   const finalBody = request.body ? VariableStore.replaceInString(request.body) : undefined;
@@ -84,30 +101,98 @@ export async function runRequest(request: RextRequest) {
       }
 
       const results: { label: string; pass: boolean }[] = [];
-      request.assertions.forEach(assertion => {
-        if (assertion.type === 'status') {
-          const pass = response.status.toString() === assertion.expected;
-          results.push({ label: `Status is ${assertion.expected}`, pass });
+      const duration = Date.now() - startTime;
+
+      // Calculate response size early for assertions
+      const rawData = typeof response.data === 'string' ? response.data : JSON.stringify(response.data);
+      const responseSize = rawData ? new TextEncoder().encode(rawData).length : 0;
+
+      // Helper: resolve nested path
+      const resolvePath = (obj: any, path: string): any => {
+        return path.split('.').reduce((o: any, k: string) => o != null ? o[k] : undefined, obj);
+      };
+
+      request.assertions.forEach(a => {
+        let actual: any;
+        let label = `${a.target}${a.path ? '.' + a.path : ''} ${a.operator}${a.expected != null ? ' ' + a.expected : ''}`;
+
+        // Resolve actual value based on target
+        switch (a.target) {
+          case 'status': actual = response.status; break;
+          case 'body': actual = a.path ? resolvePath(response.data, a.path) : response.data; break;
+          case 'header': actual = a.path ? response.headers[a.path.toLowerCase()] : response.headers; break;
+          case 'duration': actual = duration; break;
+          case 'size': actual = responseSize; break;
+          case 'cookie': {
+            const setCk = response.headers['set-cookie'];
+            if (setCk && a.path) {
+              const arr = Array.isArray(setCk) ? setCk : [setCk];
+              const found = arr.find((c: string) => c.trim().startsWith(a.path + '='));
+              actual = found ? found.split('=').slice(1).join('=').split(';')[0] : undefined;
+            }
+            break;
+          }
         }
 
-        if (assertion.type === 'body' && assertion.actualPath) {
-          const actualValue = assertion.actualPath.split('.').reduce((obj, key) => obj?.[key], response.data);
-          const pass = String(actualValue) === assertion.expected;
-          results.push({ label: `Body ${assertion.actualPath} == ${assertion.expected}`, pass });
+        let pass = false;
+        const actualStr = String(actual);
+        const expectedStr = a.expected || '';
+
+        switch (a.operator) {
+          case '==': pass = actualStr === expectedStr; break;
+          case '!=': pass = actualStr !== expectedStr; break;
+          case '>': pass = Number(actual) > Number(expectedStr); break;
+          case '<': pass = Number(actual) < Number(expectedStr); break;
+          case '>=': pass = Number(actual) >= Number(expectedStr); break;
+          case '<=': pass = Number(actual) <= Number(expectedStr); break;
+          case 'contains': pass = actualStr.includes(expectedStr); break;
+          case 'exists': pass = actual !== undefined && actual !== null; break;
+          case '!exists': pass = actual === undefined || actual === null; break;
+          case 'isArray': pass = Array.isArray(actual); break;
+          case 'isNumber': pass = typeof actual === 'number' || !isNaN(Number(actual)); break;
+          case 'isNull': pass = actual === null; break;
+          case 'isUndefined': pass = actual === undefined; break;
+          case 'isEmpty': pass = actual === '' || actual === null || actual === undefined || (Array.isArray(actual) && actual.length === 0) || (typeof actual === 'object' && actual !== null && Object.keys(actual).length === 0); break;
         }
+
+        results.push({ label, pass });
       });
+
+      // responseSize and duration already calculated above for assertions
+
+      // Extract cookies from set-cookie header
+      const setCookie = response.headers['set-cookie'];
+      const cookies: { name: string; value: string; attributes: string }[] = [];
+      if (setCookie) {
+        const cookieArr = Array.isArray(setCookie) ? setCookie : [setCookie];
+        cookieArr.forEach((c: string) => {
+          const parts = c.split(';');
+          const [nameVal, ...attrs] = parts;
+          const eqIdx = nameVal.indexOf('=');
+          if (eqIdx > 0) {
+            cookies.push({
+              name: nameVal.substring(0, eqIdx).trim(),
+              value: nameVal.substring(eqIdx + 1).trim(),
+              attributes: attrs.map(a => a.trim()).join('; ')
+            });
+          }
+        });
+      }
 
       return {
         name: request.name,
         method: request.method,
         url: finalUrl,
         status: response.status,
-        duration: Date.now() - startTime,
+        duration,
         attempts: attempt,
         maxAttempts,
         data: response.data,
         headers: response.headers,
-        assertions: results
+        assertions: results,
+        size: responseSize,
+        cookies,
+        preResults: preResults.length > 0 ? preResults : undefined
       };
     } catch (error: any) {
       lastError = error;

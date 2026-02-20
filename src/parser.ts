@@ -1,3 +1,15 @@
+export interface RextConfig {
+  collection?: string;
+  baseUrl?: string;
+  headers: Record<string, string>;
+  timeout?: number;
+  retries?: number;
+  assertions: RextAssertion[];
+  startLine: number;
+  endLine: number;
+  filePath?: string; // set externally for cross-file resolution
+}
+
 export interface RextRequest {
   id?: string;
   hasMissingId?: boolean;
@@ -15,25 +27,121 @@ export interface RextRequest {
   timeout?: number;
   startLine: number;
   endLine: number;
-  assertions: { type: string; expected: string; actualPath?: string }[];
+  assertions: RextAssertion[];
+  preRequestIds?: string[];
+  resolvedConfig?: RextConfig;
+};
+
+export interface RextAssertion {
+  target: 'status' | 'body' | 'header' | 'duration' | 'size' | 'cookie';
+  path?: string;
+  operator: '==' | '!=' | '>' | '<' | '>=' | '<=' | 'contains' | 'exists' | '!exists' | 'isArray' | 'isNumber' | 'isNull' | 'isUndefined' | 'isEmpty';
+  expected?: string;
+}
+
+function splitTargetPath(input: string): [string, string | undefined] {
+  const dot = input.indexOf('.');
+  if (dot === -1) { return [input, undefined]; }
+  return [input.substring(0, dot), input.substring(dot + 1)];
+}
+
+export interface ParseResult {
+  requests: RextRequest[];
+  configs: RextConfig[];
+}
+
+export function parseRextFull(content: string): ParseResult {
+  const result = parseRextInternal(content);
+  return { requests: result.requests, configs: result.configs };
 }
 
 export function parseRext(content: string): RextRequest[] {
+  return parseRextInternal(content).requests;
+}
+
+function parseConfigBlock(lines: string[], startIdx: number): { config: RextConfig; endIdx: number } {
+  const config: RextConfig = { headers: {}, assertions: [], startLine: startIdx, endLine: startIdx };
+  let i = startIdx + 1; // skip @config line
+  let parsingHeaders = false;
+  let parsingAsserts = false;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // End of config block
+    if (trimmed.startsWith('###') || trimmed === '@config' || (trimmed.startsWith('@') && !trimmed.startsWith('@config'))) {
+      break;
+    }
+    // Skip empty lines at end
+    if (trimmed === '' && i + 1 < lines.length && (lines[i + 1].trim().startsWith('###') || lines[i + 1].trim() === '@config' || lines[i + 1].trim() === '')) {
+      config.endLine = i;
+      i++;
+      continue;
+    }
+
+    // Indented line = part of headers or asserts block
+    if ((line.startsWith('  ') || line.startsWith('\t')) && (parsingHeaders || parsingAsserts)) {
+      if (parsingHeaders && trimmed.includes(':')) {
+        const [key, ...vp] = trimmed.split(':');
+        config.headers[key.trim()] = vp.join(':').trim();
+      }
+      if (parsingAsserts) {
+        const statusM = trimmed.match(/^status\s+==?\s+(\d+)/);
+        if (statusM) { config.assertions.push({ target: 'status', operator: '==', expected: statusM[1] }); }
+        const bodyM = trimmed.match(/^body\.(\S+)\s+==?\s+(.+)/);
+        if (bodyM) { config.assertions.push({ target: 'body', path: bodyM[1], operator: '==', expected: bodyM[2].trim() }); }
+      }
+    } else {
+      parsingHeaders = false;
+      parsingAsserts = false;
+      // Top-level keys
+      if (trimmed === 'headers:') { parsingHeaders = true; }
+      else if (trimmed === 'assert:') { parsingAsserts = true; }
+      else if (trimmed.startsWith('baseUrl:')) { config.baseUrl = trimmed.replace('baseUrl:', '').trim(); }
+      else if (trimmed.startsWith('collection:')) { config.collection = trimmed.replace('collection:', '').trim(); }
+      else if (trimmed.startsWith('timeout:')) { config.timeout = parseInt(trimmed.replace('timeout:', '').trim()); }
+      else if (trimmed.startsWith('retries:')) { config.retries = parseInt(trimmed.replace('retries:', '').trim()); }
+    }
+    config.endLine = i;
+    i++;
+  }
+  return { config, endIdx: i };
+}
+
+function parseRextInternal(content: string): { requests: RextRequest[]; configs: RextConfig[] } {
   const lines = content.split(/\r?\n/);
   const requests: RextRequest[] = [];
-
-  // Cambiamos el tipo para que sea más explícito
-  let currentRequest: RextRequest | null = null;
-  let isParsingBody = false;
-  const bodyBuffer: string[] = [];
+  const configs: RextConfig[] = [];
   let fileCollection: string | undefined;
   let fileTags: string[] | undefined;
+  let currentRequest: RextRequest | null = null;
+  let isParsingBody = false;
+  let bodyBuffer: string[] = [];
 
   let inDocBlock = false;
 
   // Usamos entries() para tener el índice y la línea al mismo tiempo
-  for (const [index, line] of lines.entries()) {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
     const trimmed = line.trim();
+
+    // Detectar bloque @config
+    if (trimmed === '@config') {
+      // Flush current request if any
+      if (currentRequest && currentRequest.url) {
+        currentRequest.body = bodyBuffer.join('\n').trim();
+        currentRequest.endLine = index - 1;
+        requests.push(currentRequest);
+        currentRequest = null;
+        isParsingBody = false;
+        bodyBuffer.length = 0;
+      }
+      const { config, endIdx } = parseConfigBlock(lines, index);
+      configs.push(config);
+      index = endIdx - 1; // -1 because for loop increments
+      continue;
+    }
 
     // Detectar bloque JSDoc /** ... */ para directivas file-level
     if (trimmed.startsWith('/**')) { inDocBlock = true; continue; }
@@ -100,6 +208,15 @@ export function parseRext(content: string): RextRequest[] {
       continue;
     }
 
+    if (!isParsingBody && trimmed.startsWith('@pre')) {
+      const match = trimmed.match(/@pre\s+([a-zA-Z0-9]{6})/);
+      if (match) {
+        if (!currentRequest.preRequestIds) { currentRequest.preRequestIds = []; }
+        currentRequest.preRequestIds.push(match[1]);
+      }
+      continue;
+    }
+
     if (!isParsingBody && trimmed === '@deprecated') {
       currentRequest.deprecated = true;
       continue;
@@ -128,6 +245,14 @@ export function parseRext(content: string): RextRequest[] {
       const match = trimmed.match(/@timeout\s+(\d+)/);
       if (match) {
         currentRequest.timeout = parseInt(match[1]);
+      }
+      continue;
+    }
+
+    if (trimmed.startsWith('@header')) {
+      const match = trimmed.match(/@header\s+([^:]+):\s*(.+)/);
+      if (match) {
+        currentRequest.headers[match[1].trim()] = match[2].trim();
       }
       continue;
     }
@@ -174,22 +299,34 @@ export function parseRext(content: string): RextRequest[] {
     }
 
     if (isParsingBody) {
-      bodyBuffer.push(line);
+      // Check if body should end: empty line followed by @ directive, or direct @ directive after body
+      if (trimmed.startsWith('@')) {
+        // Directive found — terminate body, reprocess this line as directive
+        isParsingBody = false;
+        currentRequest.body = bodyBuffer.join('\n').trim();
+        bodyBuffer = [];
+        // Fall through to directive processing below
+      } else {
+        bodyBuffer.push(line);
+        continue;
+      }
     }
 
     if (!isParsingBody && trimmed.startsWith('@assert')) {
-      const statusMatch = trimmed.match(/@assert\s+status\s+==\s+(\d+)/);
-      if (statusMatch) {
-        currentRequest.assertions.push({ type: 'status', expected: statusMatch[1] });
-      }
+      const assertStr = trimmed.replace('@assert', '').trim();
 
-      const bodyMatch = trimmed.match(/@assert\s+body\.(\S+)\s+==\s+(.+)/);
-      if (bodyMatch) {
-        currentRequest.assertions.push({
-          type: 'body',
-          actualPath: bodyMatch[1],
-          expected: bodyMatch[2].trim()
-        });
+      // Unary operators: target.path operator (no expected value)
+      const unaryMatch = assertStr.match(/^(\S+)\s+(exists|!exists|isArray|isNumber|isNull|isUndefined|isEmpty)$/);
+      if (unaryMatch) {
+        const [target, path] = splitTargetPath(unaryMatch[1]);
+        currentRequest.assertions.push({ target: target as any, path, operator: unaryMatch[2] as any });
+      } else {
+        // Binary operators: target.path operator expected
+        const binaryMatch = assertStr.match(/^(\S+)\s+(==|!=|>=|<=|>|<|contains)\s+(.+)$/);
+        if (binaryMatch) {
+          const [target, path] = splitTargetPath(binaryMatch[1]);
+          currentRequest.assertions.push({ target: target as any, path, operator: binaryMatch[2] as any, expected: binaryMatch[3].trim() });
+        }
       }
       continue;
     }
@@ -212,5 +349,29 @@ export function parseRext(content: string): RextRequest[] {
     if (!req.id) { req.hasMissingId = true; }
   });
 
-  return requests;
+  // Resolver config para cada request
+  const fileConfig = configs.find(c => !c.collection); // config sin collection = file-level
+  requests.forEach(req => {
+    // Buscar config específica de la collection del request
+    const collConfig = req.collection ? configs.find(c => c.collection === req.collection) : undefined;
+    const cfg = collConfig || fileConfig;
+    if (cfg) {
+      req.resolvedConfig = cfg;
+      // Aplicar baseUrl a URLs relativas
+      if (cfg.baseUrl && req.url.startsWith('/')) {
+        req.url = cfg.baseUrl.replace(/\/$/, '') + req.url;
+      }
+      // Merge headers: config como base, request overrides
+      req.headers = { ...cfg.headers, ...req.headers };
+      // Timeout y retries: solo si request no los tiene
+      if (cfg.timeout && !req.timeout) { req.timeout = cfg.timeout; }
+      if (cfg.retries && !req.retry) { req.retry = { count: cfg.retries, delay: 500 }; }
+      // Assertions: acumular
+      if (cfg.assertions.length) {
+        req.assertions = [...cfg.assertions, ...req.assertions];
+      }
+    }
+  });
+
+  return { requests, configs };
 }
