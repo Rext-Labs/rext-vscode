@@ -1,6 +1,7 @@
 {
   "name": "rext",
   "displayName": "Rext",
+  "publisher": "rext-labs",
   "description": "Smart-HTTP Client for VS Code",
   "version": "0.0.2",
   "engines": {
@@ -10,8 +11,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:rext.runCurrentFile",
-    "onLanguage:rext"
+    "onLanguage:rext",
+    "onView:rext-sidebar-view"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -29,6 +30,25 @@
         "title": "Rext: Switch Environment"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rext-sidebar",
+          "title": "Rext",
+          "icon": "./resources/rext-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "rext-sidebar": [
+        {
+          "type": "webview",
+          "id": "rext-sidebar-view",
+          "name": "Rext",
+          "icon": "./resources/rext-icon.svg"
+        }
+      ]
+    },
     "languages": [
       {
         "id": "rext",

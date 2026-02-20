@@ -1,5 +1,11 @@
 export interface RextRequest {
+  id?: string;
+  hasMissingId?: boolean;
   name?: string;
+  collection?: string;
+  group?: string;
+  tags?: string[];
+  deprecated?: boolean;
   method: string;
   url: string;
   headers: Record<string, string>;
@@ -20,10 +26,26 @@ export function parseRext(content: string): RextRequest[] {
   let currentRequest: RextRequest | null = null;
   let isParsingBody = false;
   const bodyBuffer: string[] = [];
+  let fileCollection: string | undefined;
+  let fileTags: string[] | undefined;
+
+  let inDocBlock = false;
 
   // Usamos entries() para tener el índice y la línea al mismo tiempo
   for (const [index, line] of lines.entries()) {
     const trimmed = line.trim();
+
+    // Detectar bloque JSDoc /** ... */ para directivas file-level
+    if (trimmed.startsWith('/**')) { inDocBlock = true; continue; }
+    if (inDocBlock) {
+      if (trimmed === '*/' || trimmed.endsWith('*/')) { inDocBlock = false; continue; }
+      const clean = trimmed.replace(/^\*\s*/, ''); // quitar * prefix
+      const collMatch = clean.match(/^@collection\s+(.+)/);
+      if (collMatch) { fileCollection = collMatch[1].trim(); }
+      const tagsMatch = clean.match(/^@tags\s+(.+)/);
+      if (tagsMatch) { fileTags = tagsMatch[1].split(',').map(t => t.trim()).filter(Boolean); }
+      continue;
+    }
 
     if (trimmed.startsWith('###') || (currentRequest === null && trimmed !== '')) {
       if (currentRequest && currentRequest.url) {
@@ -39,7 +61,7 @@ export function parseRext(content: string): RextRequest[] {
         captures: [],
         assertions: [],
         startLine: index,
-        endLine: index // Se actualizará al cerrar el bloque
+        endLine: index
       };
       isParsingBody = false;
       bodyBuffer.length = 0;
@@ -47,7 +69,41 @@ export function parseRext(content: string): RextRequest[] {
       if (trimmed.startsWith('###')) { continue; }
     }
 
+    // @collection dentro de un request = override individual
+    if (currentRequest && !isParsingBody && trimmed.startsWith('@collection')) {
+      const match = trimmed.match(/@collection\s+(.+)/);
+      if (match) { currentRequest.collection = match[1].trim(); }
+      continue;
+    }
+
     if (!currentRequest) { continue; }
+
+    if (!isParsingBody && trimmed.startsWith('@id')) {
+      const idMatch = trimmed.match(/@id\s+([a-zA-Z0-9]{6})/);
+      if (idMatch) {
+        currentRequest.id = idMatch[1];
+      }
+      continue;
+    }
+
+    if (!isParsingBody && trimmed.startsWith('@group')) {
+      const match = trimmed.match(/@group\s+(.+)/);
+      if (match) { currentRequest.group = match[1].trim(); }
+      continue;
+    }
+
+    if (!isParsingBody && trimmed.startsWith('@tags')) {
+      const match = trimmed.match(/@tags\s+(.+)/);
+      if (match) {
+        currentRequest.tags = match[1].split(',').map(t => t.trim()).filter(Boolean);
+      }
+      continue;
+    }
+
+    if (!isParsingBody && trimmed === '@deprecated') {
+      currentRequest.deprecated = true;
+      continue;
+    }
 
     if (!isParsingBody && trimmed.startsWith('@name')) {
       const match = trimmed.match(/@name\s+(.+)/);
@@ -145,6 +201,16 @@ export function parseRext(content: string): RextRequest[] {
     currentRequest.endLine = lines.length - 1;
     requests.push(currentRequest);
   }
+
+  // Asignar file-level collection/tags (si no tiene override) y marcar sin @id
+  requests.forEach(req => {
+    if (fileCollection && !req.collection) { req.collection = fileCollection; }
+    if (fileTags) {
+      const reqTags = req.tags || [];
+      req.tags = [...new Set([...fileTags, ...reqTags])];
+    }
+    if (!req.id) { req.hasMissingId = true; }
+  });
 
   return requests;
 }

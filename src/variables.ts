@@ -158,4 +158,19 @@ export class VariableStore {
     public static getEnvVars(): Record<string, string> {
         return { ...this.envVars };
     }
+
+    /**
+     * Retorna las variables de un scope específico (para el sidebar).
+     */
+    public static getScopeVars(scope: string): Record<string, string> {
+        switch (scope) {
+            case 'session': return { ...this.sessionVars };
+            case 'collection': return { ...this.collectionVars };
+            case 'env': return { ...this.envVars };
+            case 'global':
+                if (!this._globalState) { return {}; }
+                return { ...this._globalState.get<Record<string, string>>(this.GLOBAL_KEY, {}) };
+            default: return {};
+        }
+    }
 }

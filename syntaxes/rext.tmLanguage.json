@@ -10,7 +10,15 @@
   ],
   "repository": {
     "comments": {
-      "patterns": [{ "name": "comment.line.number-sign.rext", "match": "#.*$" }]
+      "patterns": [
+        {
+          "name": "comment.block.documentation.rext",
+          "begin": "/\\*\\*",
+          "end": "\\*/",
+          "patterns": [{ "include": "#directives" }]
+        },
+        { "name": "comment.line.number-sign.rext", "match": "#.*$" }
+      ]
     },
     "directives": {
       "patterns": [
@@ -54,6 +62,38 @@
           "name": "keyword.control.rext",
           "match": "@assert\\s+(\\w+)",
           "captures": { "1": { "name": "variable.other.rext" } }
+        },
+        {
+          "match": "@id\\s+([a-zA-Z0-9]{6})",
+          "captures": {
+            "0": { "name": "comment.line.rext" },
+            "1": { "name": "comment.line.rext" }
+          }
+        },
+        {
+          "match": "\\*?\\s*@collection\\s+(.+)",
+          "captures": {
+            "0": { "name": "keyword.control.rext" },
+            "1": { "name": "string.unquoted.name.rext" }
+          }
+        },
+        {
+          "match": "@group\\s+(.+)",
+          "captures": {
+            "0": { "name": "keyword.control.rext" },
+            "1": { "name": "string.unquoted.name.rext" }
+          }
+        },
+        {
+          "match": "\\*?\\s*@tags\\s+(.+)",
+          "captures": {
+            "0": { "name": "keyword.control.rext" },
+            "1": { "name": "entity.name.tag.rext" }
+          }
+        },
+        {
+          "name": "keyword.deprecated.rext",
+          "match": "@deprecated"
         }
       ]
     },
