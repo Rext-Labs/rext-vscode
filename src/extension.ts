@@ -23,6 +23,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   VariableStore.initGlobalState(context);
   EnvironmentManager.init(context);
+  RextResultsPanel.setExtensionUri(context.extensionUri);
 
   // --- Sidebar WebviewView ---
   const sidebarProvider = new RextSidebarProvider(context.extensionUri);
