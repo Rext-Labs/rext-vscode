@@ -3,7 +3,7 @@
   "displayName": "Rext HTTP",
   "publisher": "rext-labs",
   "description": "Smart-HTTP Client for VS Code",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -63,6 +63,10 @@
         "extensions": [
           ".rext"
         ],
+        "icon": {
+          "light": "./resources/rext-file-icon-light.svg",
+          "dark": "./resources/rext-file-icon-dark.svg"
+        },
         "configuration": "./language-configuration.json"
       }
     ],
@@ -83,6 +87,7 @@
       {
         "command": "rext.runCurrentFile",
         "key": "ctrl+enter",
+        "mac": "cmd+enter",
         "when": "editorLangId == rext"
       }
     ],

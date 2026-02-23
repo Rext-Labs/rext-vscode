@@ -4,6 +4,13 @@ All notable changes to the **Rext HTTP** extension will be documented in this fi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.4] - 2025-02-23
+
+### Added
+
+- **File Icons** — Archivos `.rext` ahora muestran el ícono R de Rext en el explorador de VS Code (variantes light/dark)
+- **⌘+Enter en macOS** — Ejecutar el request bajo el cursor con `Cmd+Enter` en macOS (además de `Ctrl+Enter` en Windows/Linux)
+
 ## [0.0.3] - 2025-02-23
 
 ### Added
