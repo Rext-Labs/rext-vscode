@@ -1,9 +1,9 @@
 {
-  "name": "rext",
+  "name": "rext-vs-code",
   "displayName": "Rext HTTP",
   "publisher": "rext-labs",
   "description": "Smart-HTTP Client for VS Code",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "engines": {
     "vscode": "^1.75.0"
   },

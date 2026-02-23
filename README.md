@@ -433,7 +433,10 @@ Authorization: Bearer {{token}}
 3. Search for **"Rext HTTP"**
 4. Click **Install**
 
-Or install from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rext-labs.rext).
+Or install from:
+
+- [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rext-labs.rext-vs-code)
+- [Open VSX Registry](https://open-vsx.org/extension/rext-labs/rext-vs-code)
 
 ---
 
@@ -447,6 +450,8 @@ Rext is built on an open specification. Learn more at [github.com/Rext-Labs/rext
 
 - 🌐 **Website**: [getrext.com](https://getrext.com)
 - 📖 **Spec**: [github.com/Rext-Labs/rext-spec](https://github.com/Rext-Labs/rext-spec)
+- 🛒 **VS Code Marketplace**: [marketplace.visualstudio.com](https://marketplace.visualstudio.com/items?itemName=rext-labs.rext-vs-code)
+- 🟢 **Open VSX**: [open-vsx.org](https://open-vsx.org/extension/rext-labs/rext-vs-code)
 - 🐛 **Issues**: [github.com/Rext-Labs/rext-vscode/issues](https://github.com/Rext-Labs/rext-vscode/issues)
 - 🏢 **Organization**: [github.com/Rext-Labs](https://github.com/Rext-Labs)
 
