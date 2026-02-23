@@ -1,6 +1,6 @@
 {
   "name": "rext",
-  "displayName": "Rext",
+  "displayName": "Rext HTTP",
   "publisher": "rext-labs",
   "description": "Smart-HTTP Client for VS Code",
   "version": "0.0.2",
@@ -16,6 +16,9 @@
     "onView:rext-sidebar-view"
   ],
   "main": "./out/extension.js",
+  "repository": {
+    "url": "https://github.com/Rext-Labs/rext-vscode.git"
+  },
   "contributes": {
     "commands": [
       {

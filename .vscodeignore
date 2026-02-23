@@ -1,6 +1,8 @@
 .vscode/**
 .vscode-test/**
 src/**
+webview-ui/**
+node_modules/**
 .gitignore
 .yarnrc
 vsc-extension-quickstart.md
@@ -8,4 +10,8 @@ vsc-extension-quickstart.md
 **/eslint.config.mjs
 **/*.map
 **/*.ts
+!out/**
 **/.vscode-test.*
+.DS_Store
+**/.DS_Store
+*.vsix
