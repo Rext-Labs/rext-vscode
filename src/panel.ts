@@ -14,9 +14,28 @@ export class RextResultsPanel {
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
         this._panel.webview.onDidReceiveMessage(
-            message => {
-                if (message.command === 'clearHistory') {
-                    this._resultsHistory = [];
+            async (message) => {
+                switch (message.command) {
+                    case 'clearHistory':
+                        this._resultsHistory = [];
+                        break;
+                    case 'saveResponse': {
+                        const extMap: Record<string, string> = {
+                            json: 'json', xml: 'xml', html: 'html',
+                            css: 'css', javascript: 'js', text: 'txt'
+                        };
+                        const ext = extMap[message.format] || 'txt';
+                        const uri = await vscode.window.showSaveDialog({
+                            defaultUri: vscode.Uri.file(`response.${ext}`),
+                            filters: { 'All Files': ['*'], [ext.toUpperCase()]: [ext] }
+                        });
+                        if (uri) {
+                            const fs = require('fs');
+                            fs.writeFileSync(uri.fsPath, message.body, 'utf-8');
+                            vscode.window.showInformationMessage(`Respuesta guardada en ${uri.fsPath}`);
+                        }
+                        break;
+                    }
                 }
             },
             null,
@@ -81,6 +100,11 @@ export class RextResultsPanel {
         RextResultsPanel._ensurePanel();
         RextResultsPanel.currentPanel!._resultsHistory.unshift(data);
         RextResultsPanel.currentPanel!._panel.webview.postMessage({ type: 'display', data });
+    }
+
+    public static showDetail(data: any) {
+        RextResultsPanel._ensurePanel();
+        RextResultsPanel.currentPanel!._panel.webview.postMessage({ type: 'showDetail', data });
     }
 
     private _getHtmlForWebview() {

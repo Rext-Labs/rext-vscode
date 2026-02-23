@@ -4,6 +4,7 @@ import * as path from 'path';
 import { parseRext, parseRextFull } from './parser';
 import { VariableStore } from './variables';
 import { EnvironmentManager } from './environment';
+import { RextResultsPanel } from './panel';
 
 interface HistoryEntry {
     id?: string;
@@ -19,6 +20,7 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'rext-sidebar-view';
     private _view?: vscode.WebviewView;
     private _history: HistoryEntry[] = [];
+    private _fullResults: any[] = [];
     private _globalState: vscode.Memento | undefined;
 
     private static readonly HISTORY_KEY = 'rext.requestHistory';
@@ -40,6 +42,13 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
             ]
         };
         webviewView.webview.html = this._getHtml();
+
+        // Re-send data when the sidebar becomes visible again
+        webviewView.onDidChangeVisibility(() => {
+            if (webviewView.visible) {
+                this.refresh();
+            }
+        });
 
         webviewView.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.command) {
@@ -65,6 +74,16 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
                 case 'refresh':
                     this.refresh();
                     break;
+                case 'showHistoryItem': {
+                    const idx = msg.index as number;
+                    const fullResult = this._fullResults[idx];
+                    if (fullResult) {
+                        RextResultsPanel.showDetail(fullResult);
+                    } else {
+                        vscode.window.showInformationMessage('Resultado completo no disponible. Ejecuta la petición nuevamente.');
+                    }
+                    break;
+                }
                 case 'run':
                     vscode.commands.executeCommand('rext.runFromSidebar', msg.filePath, msg.requestIndex);
                     break;
@@ -165,8 +184,10 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
             }));
         }
         this._history.unshift(entry);
+        this._fullResults.unshift(result);
         if (this._history.length > RextSidebarProvider.MAX_HISTORY) {
             this._history.length = RextSidebarProvider.MAX_HISTORY;
+            this._fullResults.length = RextSidebarProvider.MAX_HISTORY;
         }
         this._globalState?.update(RextSidebarProvider.HISTORY_KEY, this._history);
         this.refresh();
@@ -333,9 +354,9 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
     }
 
     private async _loadExplorerAsync() {
-    const data = await this._getExplorerData();
-    if (this._view) {
-        this._view.webview.postMessage({ type: 'explorerData', data });
+        const data = await this._getExplorerData();
+        if (this._view) {
+            this._view.webview.postMessage({ type: 'explorerData', data });
+        }
     }
-}
 }

@@ -10,6 +10,7 @@
   "categories": [
     "Other"
   ],
+  "icon": "resources/icon.png",
   "activationEvents": [
     "onLanguage:rext",
     "onView:rext-sidebar-view"

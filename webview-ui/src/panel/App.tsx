@@ -7,6 +7,7 @@ const App: Component = () => {
   const [history, setHistory] = createSignal<any[]>([]);
   const [currentIndex, setCurrentIndex] = createSignal(0);
   const [selectedPreResult, setSelectedPreResult] = createSignal<any>(null);
+  const [detailOverride, setDetailOverride] = createSignal<any>(null);
 
   const vscodeApi = getVsCodeApi();
 
@@ -25,6 +26,7 @@ const App: Component = () => {
           setHistory((prev) => [{ ...msg.data, _pending: true }, ...prev]);
           setCurrentIndex(0);
           setSelectedPreResult(null);
+          setDetailOverride(null);
           break;
         }
         case "updatePending": {
@@ -37,11 +39,18 @@ const App: Component = () => {
             }
             return [msg.data, ...prev];
           });
+          setDetailOverride(null);
           break;
         }
         case "display": {
           setHistory((prev) => [msg.data, ...prev]);
           setCurrentIndex(0);
+          setSelectedPreResult(null);
+          setDetailOverride(null);
+          break;
+        }
+        case "showDetail": {
+          setDetailOverride(msg.data);
           setSelectedPreResult(null);
           break;
         }
@@ -50,6 +59,8 @@ const App: Component = () => {
   });
 
   const currentRequest = () => {
+    const override = detailOverride();
+    if (override) return override;
     const pre = selectedPreResult();
     if (pre) return pre;
     return history()[currentIndex()] || null;
@@ -58,10 +69,12 @@ const App: Component = () => {
   const handleSelectRequest = (index: number) => {
     setCurrentIndex(index);
     setSelectedPreResult(null);
+    setDetailOverride(null);
   };
 
   const handleSelectPreResult = (parentIdx: number, preIdx: number) => {
     setCurrentIndex(parentIdx);
+    setDetailOverride(null);
     const req = history()[parentIdx];
     if (req?.preResults?.[preIdx]) {
       setSelectedPreResult(req.preResults[preIdx]);

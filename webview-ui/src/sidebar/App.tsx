@@ -50,6 +50,8 @@ const App: Component = () => {
     vscode.postMessage({ command: "newRequest", filePath: file });
   const runAllFile = (file: string) =>
     vscode.postMessage({ command: "runAllFile", filePath: file });
+  const showHistoryItem = (index: number) =>
+    vscode.postMessage({ command: "showHistoryItem", index });
 
   // --- Context Menu ---
   const showContextMenu = (
@@ -321,7 +323,7 @@ const App: Component = () => {
             fallback={<div class="em">No requests yet</div>}
           >
             <For each={data().history}>
-              {(h: any) => {
+              {(h: any, idx) => {
                 if (
                   ft() &&
                   !(h.name || h.url).toLowerCase().includes(ft()) &&
@@ -337,7 +339,7 @@ const App: Component = () => {
                 const nm = () => h.name || h.url?.split("/").pop() || h.url;
                 const tm = () => new Date(h.timestamp).toLocaleTimeString();
                 return (
-                  <div class="hi">
+                  <div class="hi" onClick={() => showHistoryItem(idx())}>
                     <span class={`mb b-${h.method}`}>{h.method}</span>
                     <div class="hinfo">
                       <div class="hn">{escHtml(nm())}</div>

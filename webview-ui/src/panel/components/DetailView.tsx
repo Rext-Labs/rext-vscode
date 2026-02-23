@@ -5,6 +5,7 @@ import "prismjs/components/prism-markup";
 import "prismjs/components/prism-css";
 import "prismjs/components/prism-javascript";
 import { formatSize } from "../../shared/utils";
+import { getVsCodeApi } from "../../shared/vscode";
 
 interface DetailViewProps {
   request: any | null;
@@ -54,7 +55,37 @@ const DetailView: Component<DetailViewProps> = (props) => {
   const [currentTab, setCurrentTab] = createSignal("body");
   const [bodyFormat, setBodyFormat] = createSignal("auto");
   const [searchTerm, setSearchTerm] = createSignal("");
+  const [wordWrap, setWordWrap] = createSignal(false);
+  const [copyFeedback, setCopyFeedback] = createSignal("");
   let codeRef: HTMLElement | undefined;
+  const vscodeApi = getVsCodeApi();
+
+  const showFeedback = (msg: string) => {
+    setCopyFeedback(msg);
+    setTimeout(() => setCopyFeedback(""), 1500);
+  };
+
+  const copyBody = () => {
+    const raw = getRawBody();
+    navigator.clipboard.writeText(raw).then(() => showFeedback("Body copiado"));
+  };
+
+  const copyHeaders = () => {
+    const req = props.request;
+    if (!req?.headers) return;
+    const text = Object.entries(req.headers)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join("\n");
+    navigator.clipboard
+      .writeText(text)
+      .then(() => showFeedback("Headers copiados"));
+  };
+
+  const saveToFile = () => {
+    const raw = getRawBody();
+    const fmt = resolvedFormat();
+    vscodeApi.postMessage({ command: "saveResponse", body: raw, format: fmt });
+  };
 
   // Auto-detect format when request changes
   createEffect(
@@ -187,19 +218,101 @@ const DetailView: Component<DetailViewProps> = (props) => {
               <div>
                 <strong>Status:</strong> {req().status}
                 <Show when={req().duration != null}>
-                  <span style={{ opacity: 0.6, "margin-left": "10px" }}>
-                    ⏱ {req().duration}ms
+                  <span
+                    style={{
+                      opacity: 0.6,
+                      "margin-left": "10px",
+                      display: "inline-flex",
+                      "align-items": "center",
+                      gap: "3px",
+                    }}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M15 1H9v2h6V1zm-4 13h2V8h-2v6zm8.03-6.61l1.42-1.42c-.43-.51-.9-.99-1.41-1.41l-1.42 1.42A8.962 8.962 0 0 0 12 4c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-2.12-.74-4.07-1.97-5.61zM12 20c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" />
+                    </svg>
+                    {req().duration}ms
                   </span>
                 </Show>
                 <Show when={req().size != null}>
-                  <span style={{ opacity: 0.6, "margin-left": "10px" }}>
-                    📦 {formatSize(req().size)}
+                  <span
+                    style={{
+                      opacity: 0.6,
+                      "margin-left": "10px",
+                      display: "inline-flex",
+                      "align-items": "center",
+                      gap: "3px",
+                    }}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 18H4V4h16v16zm-8-6l4-4h-3V6h-2v4H8l4 4z" />
+                    </svg>
+                    {formatSize(req().size)}
                   </span>
                 </Show>
                 <Show when={req().attempts > 1}>
                   <span style={{ color: "#ff9800", "margin-left": "10px" }}>
                     ⟳ Intento {req().attempts}/{req().maxAttempts}
                   </span>
+                </Show>
+              </div>
+              <div class="export-actions">
+                <button
+                  class="export-btn"
+                  onClick={copyBody}
+                  title="Copiar Body"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+                  </svg>
+                  Body
+                </button>
+                <button
+                  class="export-btn"
+                  onClick={copyHeaders}
+                  title="Copiar Headers"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+                  </svg>
+                  Headers
+                </button>
+                <button
+                  class="export-btn"
+                  onClick={saveToFile}
+                  title="Guardar como archivo"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm2 16H5V5h11.17L19 7.83V19zm-7-7c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3zM6 6h9v4H6z" />
+                  </svg>
+                  Save
+                </button>
+                <Show when={copyFeedback()}>
+                  <span class="copy-feedback">{copyFeedback()}</span>
                 </Show>
               </div>
             </div>
@@ -209,7 +322,34 @@ const DetailView: Component<DetailViewProps> = (props) => {
               <div class="assertions-container">
                 {req().assertions.map((a: any) => (
                   <div class={`assertion-item ${a.pass ? "pass" : "fail"}`}>
-                    {a.pass ? "✅" : "❌"} {a.label}
+                    {a.pass ? (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="#4caf50"
+                        style={{
+                          "vertical-align": "middle",
+                          "margin-right": "4px",
+                        }}
+                      >
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
+                      </svg>
+                    ) : (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="#f44336"
+                        style={{
+                          "vertical-align": "middle",
+                          "margin-right": "4px",
+                        }}
+                      >
+                        <path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm5 13.59L15.59 17 12 13.41 8.41 17 7 15.59 10.59 12 7 8.41 8.41 7 12 10.59 15.59 7 17 8.41 13.41 12 17 15.59z" />
+                      </svg>
+                    )}{" "}
+                    {a.label}
                   </div>
                 ))}
               </div>
@@ -240,14 +380,30 @@ const DetailView: Component<DetailViewProps> = (props) => {
 
               {/* Body Tab */}
               <Show when={currentTab() === "body"}>
-                <div class="search-box">
-                  <input
-                    type="text"
-                    class="search-input"
-                    placeholder="Filtrar en respuesta..."
-                    value={searchTerm()}
-                    onInput={(e) => setSearchTerm(e.currentTarget.value)}
-                  />
+                <div class="body-toolbar">
+                  <div class="search-box">
+                    <input
+                      type="text"
+                      class="search-input"
+                      placeholder="Filtrar en respuesta..."
+                      value={searchTerm()}
+                      onInput={(e) => setSearchTerm(e.currentTarget.value)}
+                    />
+                  </div>
+                  <button
+                    class={`wrap-toggle ${wordWrap() ? "active" : ""}`}
+                    onClick={() => setWordWrap(!wordWrap())}
+                    title={wordWrap() ? "Word Wrap: ON" : "Word Wrap: OFF"}
+                  >
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M4 19h6v-2H4v2zM20 5H4v2h16V5zm-3 6H4v2h13.25c1.1 0 2 .9 2 2s-.9 2-2 2H15v-2l-3 3 3 3v-2h2c2.21 0 4-1.79 4-4s-1.79-4-4-4z" />
+                    </svg>
+                  </button>
                 </div>
                 <div class="sub-tabs">
                   {availableFormats().map((fmt) => (
@@ -296,7 +452,12 @@ const DetailView: Component<DetailViewProps> = (props) => {
                     resolvedFormat() !== "image"
                   }
                 >
-                  <pre>
+                  <pre
+                    style={{
+                      "white-space": wordWrap() ? "pre-wrap" : "pre",
+                      "word-break": wordWrap() ? "break-all" : "normal",
+                    }}
+                  >
                     <code ref={codeRef} class="language-json" />
                   </pre>
                 </Show>
