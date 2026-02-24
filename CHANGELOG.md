@@ -4,6 +4,14 @@ All notable changes to the **Rext HTTP** extension will be documented in this fi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.5] - 2025-02-23
+
+### Added
+
+- **Iconos para archivos de entorno** — `rext.env.json` ahora muestra una R verde en el explorador (light/dark)
+- **Iconos para archivos de colección** — `.rext.collection.json` ahora muestra una R azul en el explorador (light/dark)
+- **Categorías del Marketplace** — Se agregaron categorías: Programming Languages, Testing, Snippets
+
 ## [0.0.4] - 2025-02-23
 
 ### Added
