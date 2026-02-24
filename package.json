@@ -3,11 +3,14 @@
   "displayName": "Rext HTTP",
   "publisher": "rext-labs",
   "description": "Smart-HTTP Client for VS Code",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "engines": {
     "vscode": "^1.75.0"
   },
   "categories": [
+    "Programming Languages",
+    "Testing",
+    "Snippets",
     "Other"
   ],
   "icon": "resources/icon.png",
@@ -68,6 +71,32 @@
           "dark": "./resources/rext-file-icon-dark.svg"
         },
         "configuration": "./language-configuration.json"
+      },
+      {
+        "id": "rext-env",
+        "aliases": [
+          "Rext Environment"
+        ],
+        "filenames": [
+          "rext.env.json"
+        ],
+        "icon": {
+          "light": "./resources/rext-env-icon-light.svg",
+          "dark": "./resources/rext-env-icon-dark.svg"
+        }
+      },
+      {
+        "id": "rext-collection",
+        "aliases": [
+          "Rext Collection"
+        ],
+        "filenamePatterns": [
+          "*.rext.collection.json"
+        ],
+        "icon": {
+          "light": "./resources/rext-collection-icon-light.svg",
+          "dark": "./resources/rext-collection-icon-dark.svg"
+        }
       }
     ],
     "grammars": [
