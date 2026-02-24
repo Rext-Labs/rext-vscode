@@ -17,7 +17,8 @@
           "end": "\\*/",
           "patterns": [{ "include": "#directives" }]
         },
-        { "name": "comment.line.number-sign.rext", "match": "#.*$" }
+        { "name": "comment.line.number-sign.rext", "match": "#.*$" },
+        { "name": "comment.line.separator.rext", "match": "^\\s*---\\s*$" }
       ]
     },
     "directives": {
@@ -120,6 +121,38 @@
         {
           "name": "keyword.deprecated.rext",
           "match": "@deprecated"
+        },
+        {
+          "match": "@form\\s+(\\S+)\\s*=\\s*@file\\s+(\\S+)(?:\\s+(\\S+))?",
+          "captures": {
+            "0": { "name": "keyword.control.rext" },
+            "1": { "name": "variable.other.rext" },
+            "2": { "name": "string.unquoted.rext" },
+            "3": { "name": "support.type.property-name.rext" }
+          }
+        },
+        {
+          "match": "@form\\s+(\\S+)\\s*=\\s*(.+)",
+          "captures": {
+            "0": { "name": "keyword.control.rext" },
+            "1": { "name": "variable.other.rext" },
+            "2": { "name": "string.unquoted.rext" }
+          }
+        },
+        {
+          "match": "@body\\s+(.+)",
+          "captures": {
+            "0": { "name": "keyword.control.rext" },
+            "1": { "name": "string.unquoted.rext" }
+          }
+        },
+        {
+          "match": "@query\\\\s+(\\\\S+)\\\\s*=\\\\s*(.+)",
+          "captures": {
+            "0": { "name": "keyword.control.rext" },
+            "1": { "name": "variable.other.rext" },
+            "2": { "name": "string.unquoted.rext" }
+          }
         }
       ]
     },
@@ -131,7 +164,7 @@
     "method_url": {
       "patterns": [
         {
-          "match": "^(GET|POST|PUT|DELETE|PATCH)\\s+(https?://\\S+)",
+          "match": "^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\\s+(\\S+)",
           "captures": {
             "1": { "name": "keyword.other.unit.rext" },
             "2": { "name": "string.underline.rext" }

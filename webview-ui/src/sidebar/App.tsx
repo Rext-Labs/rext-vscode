@@ -52,6 +52,12 @@ const App: Component = () => {
     vscode.postMessage({ command: "runAllFile", filePath: file });
   const showHistoryItem = (index: number) =>
     vscode.postMessage({ command: "showHistoryItem", index });
+  const exportRequest = (file: string, idx: number) =>
+    vscode.postMessage({
+      command: "export",
+      filePath: file,
+      requestIndex: idx,
+    });
 
   // --- Context Menu ---
   const showContextMenu = (
@@ -119,11 +125,115 @@ const App: Component = () => {
               ↻
             </button>
           </div>
-          <For
-            each={explorerData().files}
-            fallback={<div class="em">No .rext files found</div>}
-          >
-            {(f: any) => {
+          {(() => {
+            type DirNode = {
+              dirs: Record<string, DirNode>;
+              files: any[];
+            };
+
+            const buildTree = () => {
+              const allFiles = explorerData().files || [];
+              if (allFiles.length === 0)
+                return { root: { dirs: {}, files: [] }, prefix: "" };
+
+              // Find common prefix
+              const paths = allFiles.map((f: any) =>
+                (f.path as string).replace(/\\/g, "/").split("/"),
+              );
+              let prefix = paths[0].slice(0, -1);
+              for (const p of paths) {
+                const dir = p.slice(0, -1);
+                let i = 0;
+                while (
+                  i < prefix.length &&
+                  i < dir.length &&
+                  prefix[i] === dir[i]
+                )
+                  i++;
+                prefix = prefix.slice(0, i);
+              }
+              const prefixLen = prefix.length;
+
+              const root: DirNode = { dirs: {}, files: [] };
+              for (const f of allFiles) {
+                const parts = (f.path as string).replace(/\\/g, "/").split("/");
+                const rel = parts.slice(prefixLen, -1); // relative dir segments
+                let node = root;
+                for (const seg of rel) {
+                  if (!node.dirs[seg]) node.dirs[seg] = { dirs: {}, files: [] };
+                  node = node.dirs[seg];
+                }
+                node.files.push(f);
+              }
+              return { root, prefix: prefix.join("/") };
+            };
+
+            const FolderIcon = () => (
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                opacity="0.5"
+                style={{ "flex-shrink": "0" }}
+              >
+                <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
+              </svg>
+            );
+
+            const renderDir = (
+              name: string,
+              node: DirNode,
+              depth: number,
+            ): any => {
+              // Compact single-child dirs: if only one subdir and no files, merge names
+              let displayName = name;
+              let current = node;
+              while (
+                Object.keys(current.dirs).length === 1 &&
+                current.files.length === 0
+              ) {
+                const [childName] = Object.keys(current.dirs);
+                displayName += "/" + childName;
+                current = current.dirs[childName];
+              }
+
+              const totalFiles = countFiles(current);
+              return (
+                <div
+                  class="file-group"
+                  style={{ "padding-left": depth > 0 ? "12px" : "0" }}
+                >
+                  <div class="fh" onClick={(e) => toggleNext(e.currentTarget)}>
+                    <span class="chv open">▶</span>
+                    <FolderIcon />
+                    <span class="fn">{escHtml(displayName)}</span>
+                    <span class="rc">{totalFiles}</span>
+                  </div>
+                  <div class="fr">
+                    <For
+                      each={Object.entries(current.dirs).sort(([a], [b]) =>
+                        a.localeCompare(b),
+                      )}
+                    >
+                      {([childName, childNode]) =>
+                        renderDir(childName, childNode, depth + 1)
+                      }
+                    </For>
+                    <For each={current.files}>{(f: any) => renderFile(f)}</For>
+                  </div>
+                </div>
+              );
+            };
+
+            const countFiles = (node: DirNode): number => {
+              let count = node.files.length;
+              for (const child of Object.values(node.dirs))
+                count += countFiles(child);
+              return count;
+            };
+
+            const renderFile = (f: any) => {
               const reqs = () => {
                 if (!ft()) return f.requests;
                 return f.requests.filter(
@@ -191,8 +301,27 @@ const App: Component = () => {
                   </div>
                 </Show>
               );
-            }}
-          </For>
+            };
+
+            const { root } = buildTree();
+            const topDirs = Object.entries(root.dirs).sort(([a], [b]) =>
+              a.localeCompare(b),
+            );
+            const topFiles = root.files;
+            const hasContent = topDirs.length > 0 || topFiles.length > 0;
+
+            return (
+              <Show
+                when={hasContent}
+                fallback={<div class="em">No .rext files found</div>}
+              >
+                <For each={topDirs}>
+                  {([name, node]) => renderDir(name, node, 0)}
+                </For>
+                <For each={topFiles}>{(f: any) => renderFile(f)}</For>
+              </Show>
+            );
+          })()}
         </div>
 
         {/* Collections Tab */}
@@ -206,12 +335,10 @@ const App: Component = () => {
             </button>
           </div>
           {(() => {
+            type ReqItem = { file: string; req: any; idx: number };
             const collections = () => {
-              const map: Record<
-                string,
-                { file: string; req: any; idx: number }[]
-              > = {};
-              const uncollected: { file: string; req: any; idx: number }[] = [];
+              const map: Record<string, ReqItem[]> = {};
+              const uncollected: ReqItem[] = [];
               for (const f of explorerData().files || []) {
                 (f.requests || []).forEach((r: any, i: number) => {
                   if (r.collection) {
@@ -222,9 +349,9 @@ const App: Component = () => {
                   }
                 });
               }
-              const sorted: [string, typeof uncollected][] = Object.entries(
-                map,
-              ).sort(([a], [b]) => a.localeCompare(b));
+              const sorted: [string, ReqItem[]][] = Object.entries(map).sort(
+                ([a], [b]) => a.localeCompare(b),
+              );
               if (uncollected.length > 0) {
                 sorted.push(["Uncollected", uncollected]);
               }
@@ -241,12 +368,139 @@ const App: Component = () => {
                         (it) =>
                           name.toLowerCase().includes(ft()) ||
                           it.req.name.toLowerCase().includes(ft()) ||
-                          it.req.method.toLowerCase().includes(ft()),
+                          it.req.method.toLowerCase().includes(ft()) ||
+                          (it.req.group || "").toLowerCase().includes(ft()),
                       ),
                     ] as [string, typeof items],
                 )
                 .filter(([, items]) => items.length > 0);
             };
+
+            const renderItem = (it: ReqItem) => (
+              <div
+                class={`ri ${it.req.deprecated ? "dep" : ""}`}
+                onDblClick={() => openFile(it.file, it.req.line)}
+                onContextMenu={(e) =>
+                  showContextMenu(e, "request", {
+                    filePath: it.file,
+                    line: it.req.line,
+                    idx: it.idx,
+                    name: it.req.name,
+                  })
+                }
+              >
+                <span class={`mb b-${it.req.method}`}>{it.req.method}</span>
+                <span class="rn">{escHtml(it.req.name)}</span>
+                <Show when={it.req.tags}>
+                  <For each={it.req.tags}>
+                    {(tag: string) => <span class="tag-badge">{tag}</span>}
+                  </For>
+                </Show>
+                <button
+                  class="play-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    runRequest(it.file, it.idx);
+                  }}
+                >
+                  ▶
+                </button>
+              </div>
+            );
+
+            const GroupIcon = () => (
+              <svg
+                class="group-icon"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                opacity="0.55"
+              >
+                <path d="M12 2l-5.5 9h11L12 2zm0 3.84L13.93 9h-3.87L12 5.84zM17.5 13c-2.49 0-4.5 2.01-4.5 4.5s2.01 4.5 4.5 4.5 4.5-2.01 4.5-4.5-2.01-4.5-4.5-4.5zm0 7a2.5 2.5 0 010-5 2.5 2.5 0 010 5zM3 21.5h8v-8H3v8zm2-6h4v4H5v-4z" />
+              </svg>
+            );
+
+            type GroupNode = {
+              items: ReqItem[];
+              children: Record<string, GroupNode>;
+            };
+
+            const buildGroupTree = (
+              items: ReqItem[],
+            ): { tree: Record<string, GroupNode>; ungrouped: ReqItem[] } => {
+              const tree: Record<string, GroupNode> = {};
+              const ungrouped: ReqItem[] = [];
+              for (const it of items) {
+                if (it.req.group) {
+                  const parts = (it.req.group as string).split("/");
+                  let node = tree;
+                  for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i].trim();
+                    if (!node[part]) node[part] = { items: [], children: {} };
+                    if (i === parts.length - 1) {
+                      node[part].items.push(it);
+                    } else {
+                      node = node[part].children;
+                    }
+                  }
+                } else {
+                  ungrouped.push(it);
+                }
+              }
+              return { tree, ungrouped };
+            };
+
+            const renderGroupTree = (
+              tree: Record<string, GroupNode>,
+              depth: number = 0,
+            ) => {
+              const sorted = Object.entries(tree).sort(([a], [b]) =>
+                a.localeCompare(b),
+              );
+              return (
+                <For each={sorted}>
+                  {([name, node]) => (
+                    <div
+                      class="group-section"
+                      style={{ "padding-left": depth > 0 ? "8px" : "0" }}
+                    >
+                      <div
+                        class="gh"
+                        onClick={(e) => toggleNext(e.currentTarget)}
+                      >
+                        <span class="chv open">▶</span>
+                        <GroupIcon />
+                        <span class="gn">{escHtml(name)}</span>
+                        <span class="rc">
+                          {node.items.length +
+                            Object.values(node.children).reduce(
+                              (s, c) => s + c.items.length,
+                              0,
+                            )}
+                        </span>
+                      </div>
+                      <div class="gr">
+                        {Object.keys(node.children).length > 0 &&
+                          renderGroupTree(node.children, depth + 1)}
+                        <For each={node.items}>{renderItem}</For>
+                      </div>
+                    </div>
+                  )}
+                </For>
+              );
+            };
+
+            const renderGroupedItems = (items: ReqItem[]) => {
+              const { tree, ungrouped } = buildGroupTree(items);
+              return (
+                <>
+                  {renderGroupTree(tree)}
+                  <For each={ungrouped}>{renderItem}</For>
+                </>
+              );
+            };
+
             return (
               <Show
                 when={filtered().length > 0}
@@ -264,43 +518,7 @@ const App: Component = () => {
                         <span class="rc">{(items as any[]).length}</span>
                       </div>
                       <div class="fr">
-                        <For each={items as any[]}>
-                          {(it) => (
-                            <div
-                              class={`ri ${it.req.deprecated ? "dep" : ""}`}
-                              onDblClick={() => openFile(it.file, it.req.line)}
-                              onContextMenu={(e) =>
-                                showContextMenu(e, "request", {
-                                  filePath: it.file,
-                                  line: it.req.line,
-                                  idx: it.idx,
-                                  name: it.req.name,
-                                })
-                              }
-                            >
-                              <span class={`mb b-${it.req.method}`}>
-                                {it.req.method}
-                              </span>
-                              <span class="rn">{escHtml(it.req.name)}</span>
-                              <Show when={it.req.tags}>
-                                <For each={it.req.tags}>
-                                  {(tag: string) => (
-                                    <span class="tag-badge">{tag}</span>
-                                  )}
-                                </For>
-                              </Show>
-                              <button
-                                class="play-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  runRequest(it.file, it.idx);
-                                }}
-                              >
-                                ▶
-                              </button>
-                            </div>
-                          )}
-                        </For>
+                        {renderGroupedItems(items as ReqItem[])}
                       </div>
                     </div>
                   )}
@@ -528,6 +746,16 @@ const App: Component = () => {
                 }}
               >
                 ➕ New Request
+              </div>
+              <div class="ctx-sep" />
+              <div
+                class="ctx-item"
+                onClick={() => {
+                  exportRequest(menu().filePath, menu().idx);
+                  setCtxMenu(null);
+                }}
+              >
+                📋 Export as Code
               </div>
             </Show>
           </div>

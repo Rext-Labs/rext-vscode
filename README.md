@@ -16,7 +16,7 @@ A diferencia de los archivos `.http` tradicionales, Rext introduce directivas in
 
 ### 📝 Human-Readable Syntax
 
-Cada request se separa con `###`. La primera línea indica el método y la URL.
+Cada request se separa con `###`, `---`, o una **doble línea vacía**. La primera línea indica el método y la URL.
 
 ```rext
 ###
@@ -88,6 +88,27 @@ POST https://api.example.com/auth/login
 @deprecated
 @name Old Login
 POST https://api.example.com/v1/login
+```
+
+### `@query` — Query parameters separados
+
+Define query parameters como directivas separadas. Se codifican automáticamente.
+
+```rext
+@name Search Users
+GET {{baseUrl}}/users
+@query page = 1
+@query limit = 20
+@query search = {{searchTerm}}
+```
+
+### `@body` — Body desde archivo
+
+```rext
+@name Upload Data
+POST {{baseUrl}}/import
+Content-Type: application/json
+@body ./data/payload.json
 ```
 
 ---
@@ -321,13 +342,15 @@ Cambia de entorno con `Rext: Switch Environment` desde el command palette o la b
 
 ## 🧩 Editor Experience
 
-- **Syntax Highlighting** — Full TextMate grammar for `.rext` files
-- **IntelliSense** — Auto-completion for directives, methods, headers, and variables
-- **CodeLens** — Run buttons inline above each request
+- **Syntax Highlighting** — Full TextMate grammar for `.rext` files with scope-based variable coloring
+- **Variable Coloring** — `{{variables}}` se colorean según su scope: env=verde, session=azul, collection=naranja, global=púrpura, capture=teal+línea amarilla, undefined=rojo
+- **IntelliSense** — Auto-completion for directives, methods, headers, and `{{variables}}` with scope info
+- **CodeLens** — Run and Export buttons inline above each request
 - **Inlay Hints** — Visual feedback for captured variables and auto-generated IDs
 - **Diagnostics** — Warnings for duplicate IDs, syntax errors, and more
 - **Quick Fixes** — Auto-generate missing `@id` directives
 - **Snippets** — Quick scaffolding for common patterns
+- **Code Export** — Export requests as cURL, JavaScript (fetch), Go (net/http), Dart (http), or Python (requests)
 
 ### Response Panel
 
@@ -339,9 +362,12 @@ View responses in a dedicated panel with:
 - Assertion results (✅ pass / ❌ fail)
 - Captured variables
 
-### Sidebar
+Dedicated activity bar panel with:
 
-Dedicated activity bar panel showing your request history and workspace `.rext` files.
+- **Files tab** — Árbol de directorios con todos los archivos `.rext` del workspace
+- **Collections tab** — Requests organizados por `@collection` y `@group` con sub-niveles anidados
+- **History tab** — Historial de requests ejecutados
+- **Environments tab** — Variables de cada scope (env, session, collection, global)
 
 ### 🔀 Git Friendly
 
@@ -364,6 +390,8 @@ Dedicated activity bar panel showing your request history and workspace `.rext` 
 | `as`        | Assert status code                          |
 | `ab`        | Assert body value                           |
 | `retry`     | Retry with delay                            |
+| `query`     | Query parameter (`@query`)                  |
+| `bodyfile`  | Body from file (`@body ./path`)             |
 
 ---
 

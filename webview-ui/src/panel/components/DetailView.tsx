@@ -57,6 +57,7 @@ const DetailView: Component<DetailViewProps> = (props) => {
   const [searchTerm, setSearchTerm] = createSignal("");
   const [wordWrap, setWordWrap] = createSignal(false);
   const [copyFeedback, setCopyFeedback] = createSignal("");
+  const [showExportMenu, setShowExportMenu] = createSignal(false);
   let codeRef: HTMLElement | undefined;
   const vscodeApi = getVsCodeApi();
 
@@ -85,6 +86,23 @@ const DetailView: Component<DetailViewProps> = (props) => {
     const raw = getRawBody();
     const fmt = resolvedFormat();
     vscodeApi.postMessage({ command: "saveResponse", body: raw, format: fmt });
+  };
+
+  const exportCode = (lang: string) => {
+    const req = props.request;
+    if (!req) return;
+    vscodeApi.postMessage({
+      command: "exportCode",
+      language: lang,
+      request: {
+        method: req.method || "GET",
+        url: req.url || "",
+        headers: req.requestHeaders || {},
+        body: req.requestBody,
+      },
+    });
+    setShowExportMenu(false);
+    showFeedback("Código copiado");
   };
 
   // Auto-detect format when request changes
@@ -311,6 +329,57 @@ const DetailView: Component<DetailViewProps> = (props) => {
                   </svg>
                   Save
                 </button>
+                <div style={{ position: "relative", display: "inline-block" }}>
+                  <button
+                    class="export-btn"
+                    onClick={() => setShowExportMenu(!showExportMenu())}
+                    title="Exportar como código"
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z" />
+                    </svg>
+                    Export ▾
+                  </button>
+                  <Show when={showExportMenu()}>
+                    <div class="export-dropdown">
+                      <div
+                        class="export-dropdown-item"
+                        onClick={() => exportCode("curl")}
+                      >
+                        cURL
+                      </div>
+                      <div
+                        class="export-dropdown-item"
+                        onClick={() => exportCode("javascript")}
+                      >
+                        JavaScript (fetch)
+                      </div>
+                      <div
+                        class="export-dropdown-item"
+                        onClick={() => exportCode("go")}
+                      >
+                        Go (net/http)
+                      </div>
+                      <div
+                        class="export-dropdown-item"
+                        onClick={() => exportCode("dart")}
+                      >
+                        Dart (http)
+                      </div>
+                      <div
+                        class="export-dropdown-item"
+                        onClick={() => exportCode("python")}
+                      >
+                        Python (requests)
+                      </div>
+                    </div>
+                  </Show>
+                </div>
                 <Show when={copyFeedback()}>
                   <span class="copy-feedback">{copyFeedback()}</span>
                 </Show>

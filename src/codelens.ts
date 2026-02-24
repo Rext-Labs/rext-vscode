@@ -19,16 +19,21 @@ export class RextCodeLensProvider implements vscode.CodeLensProvider {
       let lensLine = req.startLine;
       for (let i = req.startLine; i <= req.endLine; i++) {
         const text = document.lineAt(i).text.trim();
-        if (text && !text.startsWith('###')) {
+        if (text && !text.startsWith('###') && text !== '---') {
           lensLine = i;
           break;
         }
       }
       const range = new vscode.Range(lensLine, 0, lensLine, 0);
-      const title = req.name ? `▶ ${req.name}` : '▶ Run Request';
+      const title = req.name ? `▶ Run ${req.name}` : '▶ Run Request';
       lenses.push(new vscode.CodeLens(range, {
         title,
         command: 'rext.runCurrentFile',
+        arguments: [index]
+      }));
+      lenses.push(new vscode.CodeLens(range, {
+        title: '📋 Export',
+        command: 'rext.exportRequest',
         arguments: [index]
       }));
     });

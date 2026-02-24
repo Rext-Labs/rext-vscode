@@ -87,6 +87,9 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
                 case 'run':
                     vscode.commands.executeCommand('rext.runFromSidebar', msg.filePath, msg.requestIndex);
                     break;
+                case 'export':
+                    vscode.commands.executeCommand('rext.exportFromSidebar', msg.filePath, msg.requestIndex);
+                    break;
                 case 'rename': {
                     const newName = await vscode.window.showInputBox({
                         prompt: 'New request name',

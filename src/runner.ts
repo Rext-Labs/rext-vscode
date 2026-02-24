@@ -1,7 +1,20 @@
 import axios from 'axios';
+import * as fs from 'fs';
+import * as path from 'path';
 import { RextRequest } from './parser';
 import { VariableStore } from './variables';
 import { EnvironmentManager } from './environment';
+
+const MIME_MAP: Record<string, string> = {
+  '.json': 'application/json', '.xml': 'application/xml', '.html': 'text/html',
+  '.txt': 'text/plain', '.csv': 'text/csv', '.css': 'text/css', '.js': 'application/javascript',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.svg': 'image/svg+xml', '.webp': 'image/webp', '.ico': 'image/x-icon',
+  '.pdf': 'application/pdf', '.zip': 'application/zip', '.gz': 'application/gzip',
+  '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+};
+
+const TEXT_MIMES = new Set(['application/json', 'application/xml', 'text/html', 'text/plain', 'text/csv', 'text/css', 'application/javascript']);
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -37,12 +50,67 @@ export async function runRequest(request: RextRequest, allRequests?: RextRequest
   }
 
   // 1. Reemplazar variables antes de enviar
-  const finalUrl = VariableStore.replaceInString(request.url);
-  const finalBody = request.body ? VariableStore.replaceInString(request.body) : undefined;
+  let finalUrl = VariableStore.replaceInString(request.url);
+
+  // Append @query params
+  if (request.queryParams && request.queryParams.length > 0) {
+    const params = request.queryParams.map(q => {
+      const key = encodeURIComponent(VariableStore.replaceInString(q.key));
+      const val = encodeURIComponent(VariableStore.replaceInString(q.value));
+      return `${key}=${val}`;
+    }).join('&');
+    finalUrl += (finalUrl.includes('?') ? '&' : '?') + params;
+  }
 
   const finalHeaders: Record<string, string> = {};
   for (const [key, value] of Object.entries(request.headers)) {
     finalHeaders[key] = VariableStore.replaceInString(value);
+  }
+
+  // Resolver body: formData > bodyFile > body inline
+  let finalBody: any = undefined;
+  const rextFilePath = (request as any)._filePath as string | undefined;
+  const baseDir = rextFilePath ? path.dirname(rextFilePath) : undefined;
+
+  if (request.formData && request.formData.length > 0) {
+    // --- FormData ---
+    const FormData = require('form-data');
+    const form = new FormData();
+    for (const field of request.formData) {
+      const resolvedValue = VariableStore.replaceInString(field.value);
+      if (field.file) {
+        const filePath = baseDir
+          ? path.resolve(baseDir, VariableStore.replaceInString(field.file.path))
+          : VariableStore.replaceInString(field.file.path);
+        if (fs.existsSync(filePath)) {
+          const ext = path.extname(filePath).toLowerCase();
+          const mime = field.file.mime || MIME_MAP[ext] || 'application/octet-stream';
+          form.append(field.key, fs.createReadStream(filePath), {
+            filename: path.basename(filePath),
+            contentType: mime
+          });
+        }
+      } else {
+        form.append(field.key, resolvedValue);
+      }
+    }
+    finalBody = form;
+    Object.assign(finalHeaders, form.getHeaders());
+  } else if (request.bodyFile) {
+    // --- Body desde archivo ---
+    const resolvedPath = VariableStore.replaceInString(request.bodyFile);
+    const filePath = baseDir ? path.resolve(baseDir, resolvedPath) : resolvedPath;
+    if (fs.existsSync(filePath)) {
+      const ext = path.extname(filePath).toLowerCase();
+      const mime = MIME_MAP[ext] || 'application/octet-stream';
+      if (TEXT_MIMES.has(mime)) {
+        finalBody = VariableStore.replaceInString(fs.readFileSync(filePath, 'utf-8'));
+      } else {
+        finalBody = fs.readFileSync(filePath);
+      }
+    }
+  } else if (request.body) {
+    finalBody = VariableStore.replaceInString(request.body);
   }
 
   const maxAttempts = request.retry ? request.retry.count + 1 : 1;
@@ -189,6 +257,8 @@ export async function runRequest(request: RextRequest, allRequests?: RextRequest
         maxAttempts,
         data: response.data,
         headers: response.headers,
+        requestHeaders: finalHeaders,
+        requestBody: typeof finalBody === 'string' ? finalBody : (finalBody ? '[binary]' : undefined),
         assertions: results,
         size: responseSize,
         cookies,

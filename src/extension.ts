@@ -8,6 +8,8 @@ import { VariableStore } from './variables';
 import { RextSidebarProvider } from './sidebar-webview';
 import { RextCompletionProvider } from './completion';
 import { RextInlayHintsProvider } from './inlay-hints';
+import { generateCode, ExportLanguage } from './codegen';
+import { activateDecorations } from './decorations';
 
 function generateId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -24,6 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
   VariableStore.initGlobalState(context);
   EnvironmentManager.init(context);
   RextResultsPanel.setExtensionUri(context.extensionUri);
+  activateDecorations(context);
 
   // --- Sidebar WebviewView ---
   const sidebarProvider = new RextSidebarProvider(context.extensionUri);
@@ -41,6 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
     VariableStore.loadCollection(editor.document.uri.fsPath);
 
     const requests = parseRext(editor.document.getText());
+    requests.forEach(r => (r as any)._filePath = editor.document.uri.fsPath);
     let requestToRun;
 
     if (requestIndex !== undefined) {
@@ -74,6 +78,7 @@ export function activate(context: vscode.ExtensionContext) {
     VariableStore.loadCollection(editor.document.uri.fsPath);
 
     const requests = parseRext(editor.document.getText());
+    requests.forEach(r => (r as any)._filePath = editor.document.uri.fsPath);
     for (const req of requests) {
       RextResultsPanel.displayPending({
         name: req.name,
@@ -120,6 +125,7 @@ export function activate(context: vscode.ExtensionContext) {
       VariableStore.loadCollection(filePath);
 
       const requests = parseRext(doc.getText());
+      requests.forEach(r => (r as any)._filePath = filePath);
       const requestToRun = requests[requestIndex];
 
       if (requestToRun) {
@@ -132,6 +138,73 @@ export function activate(context: vscode.ExtensionContext) {
         RextResultsPanel.updatePending(result);
         sidebarProvider.addHistoryEntry(result, requestToRun.id);
         sidebarProvider.refresh();
+      }
+    } catch (err: any) {
+      vscode.window.showErrorMessage(`Error: ${err.message}`);
+    }
+  });
+
+  // --- COMANDO 5: Exportar request como código ---
+  const exportRequest = vscode.commands.registerCommand('rext.exportRequest', async (requestIndex?: number) => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) { return; }
+
+    EnvironmentManager.loadActiveEnvironment();
+    VariableStore.loadCollection(editor.document.uri.fsPath);
+
+    const requests = parseRext(editor.document.getText());
+    let request;
+
+    if (requestIndex !== undefined) {
+      request = requests[requestIndex];
+    } else {
+      const cursorLine = editor.selection.active.line;
+      request = requests.find(req => cursorLine >= req.startLine && cursorLine <= req.endLine);
+    }
+
+    if (!request) {
+      vscode.window.showWarningMessage('No se encontró una petición en la posición actual.');
+      return;
+    }
+
+    const picked = await vscode.window.showQuickPick([
+      { label: '$(terminal) cURL', lang: 'curl' as ExportLanguage },
+      { label: '$(symbol-method) JavaScript (fetch)', lang: 'javascript' as ExportLanguage },
+      { label: '$(code) Go (net/http)', lang: 'go' as ExportLanguage },
+      { label: '$(symbol-class) Dart (http)', lang: 'dart' as ExportLanguage },
+      { label: '$(symbol-variable) Python (requests)', lang: 'python' as ExportLanguage },
+    ], { placeHolder: '📋 Exportar como...' });
+
+    if (picked) {
+      const code = generateCode(picked.lang, request);
+      await vscode.env.clipboard.writeText(code);
+      vscode.window.showInformationMessage(`✅ Código ${picked.label.replace(/\$\([^)]+\)\s*/, '')} copiado al clipboard`);
+    }
+  });
+
+  // --- COMANDO 6: Exportar desde sidebar ---
+  const exportFromSidebar = vscode.commands.registerCommand('rext.exportFromSidebar', async (filePath: string, requestIndex: number) => {
+    try {
+      const doc = await vscode.workspace.openTextDocument(filePath);
+      EnvironmentManager.loadActiveEnvironment();
+      VariableStore.loadCollection(filePath);
+
+      const requests = parseRext(doc.getText());
+      const request = requests[requestIndex];
+      if (!request) { return; }
+
+      const picked = await vscode.window.showQuickPick([
+        { label: '$(terminal) cURL', lang: 'curl' as ExportLanguage },
+        { label: '$(symbol-method) JavaScript (fetch)', lang: 'javascript' as ExportLanguage },
+        { label: '$(code) Go (net/http)', lang: 'go' as ExportLanguage },
+        { label: '$(symbol-class) Dart (http)', lang: 'dart' as ExportLanguage },
+        { label: '$(symbol-variable) Python (requests)', lang: 'python' as ExportLanguage },
+      ], { placeHolder: '📋 Exportar como...' });
+
+      if (picked) {
+        const code = generateCode(picked.lang, request);
+        await vscode.env.clipboard.writeText(code);
+        vscode.window.showInformationMessage(`✅ Código ${picked.label.replace(/\$\([^)]+\)\s*/, '')} copiado al clipboard`);
       }
     } catch (err: any) {
       vscode.window.showErrorMessage(`Error: ${err.message}`);
@@ -257,10 +330,10 @@ export function activate(context: vscode.ExtensionContext) {
   const codelensProvider = new RextCodeLensProvider();
 
   context.subscriptions.push(
-    runCurrent, runAll, switchEnv, runFromSidebar,
+    runCurrent, runAll, switchEnv, runFromSidebar, exportRequest, exportFromSidebar,
     saveListener, diagnosticCollection, diagChangeListener, diagOpenListener, quickFixProvider,
     vscode.languages.registerCodeLensProvider({ language: 'rext' }, codelensProvider),
-    vscode.languages.registerCompletionItemProvider({ language: 'rext' }, new RextCompletionProvider(), ' '),
+    vscode.languages.registerCompletionItemProvider({ language: 'rext' }, new RextCompletionProvider(), ' ', '{'),
     vscode.languages.registerInlayHintsProvider({ language: 'rext' }, new RextInlayHintsProvider())
   );
 }

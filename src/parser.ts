@@ -10,6 +10,12 @@ export interface RextConfig {
   filePath?: string; // set externally for cross-file resolution
 }
 
+export interface RextFormField {
+  key: string;
+  value: string;
+  file?: { path: string; mime?: string };
+}
+
 export interface RextRequest {
   id?: string;
   hasMissingId?: boolean;
@@ -22,6 +28,9 @@ export interface RextRequest {
   url: string;
   headers: Record<string, string>;
   body?: string;
+  bodyFile?: string;
+  formData?: RextFormField[];
+  queryParams?: { key: string; value: string }[];
   captures: { scope: 'session' | 'collection' | 'env' | 'global'; variable: string; query: string }[];
   retry?: { count: number; delay: number };
   timeout?: number;
@@ -70,11 +79,11 @@ function parseConfigBlock(lines: string[], startIdx: number): { config: RextConf
     const trimmed = line.trim();
 
     // End of config block
-    if (trimmed.startsWith('###') || trimmed === '@config' || (trimmed.startsWith('@') && !trimmed.startsWith('@config'))) {
+    if (trimmed.startsWith('###') || trimmed === '---' || trimmed === '@config' || (trimmed.startsWith('@') && !trimmed.startsWith('@config'))) {
       break;
     }
     // Skip empty lines at end
-    if (trimmed === '' && i + 1 < lines.length && (lines[i + 1].trim().startsWith('###') || lines[i + 1].trim() === '@config' || lines[i + 1].trim() === '')) {
+    if (trimmed === '' && i + 1 < lines.length && (lines[i + 1].trim().startsWith('###') || lines[i + 1].trim() === '---' || lines[i + 1].trim() === '@config' || lines[i + 1].trim() === '')) {
       config.endLine = i;
       i++;
       continue;
@@ -155,7 +164,22 @@ function parseRextInternal(content: string): { requests: RextRequest[]; configs:
       continue;
     }
 
-    if (trimmed.startsWith('###') || (currentRequest === null && trimmed !== '')) {
+    // Double newline delimiter: two consecutive empty lines
+    if (trimmed === '' && currentRequest && currentRequest.url) {
+      // Check if next line is also empty (double newline)
+      if (index + 1 < lines.length && lines[index + 1].trim() === '') {
+        currentRequest.body = bodyBuffer.join('\n').trim();
+        currentRequest.endLine = index - 1;
+        requests.push(currentRequest);
+        currentRequest = null;
+        isParsingBody = false;
+        bodyBuffer.length = 0;
+        index++; // Skip the second empty line
+        continue;
+      }
+    }
+
+    if (trimmed.startsWith('###') || trimmed === '---' || (currentRequest === null && trimmed !== '')) {
       if (currentRequest && currentRequest.url) {
         currentRequest.body = bodyBuffer.join('\n').trim();
         currentRequest.endLine = index - 1;
@@ -174,7 +198,7 @@ function parseRextInternal(content: string): { requests: RextRequest[]; configs:
       isParsingBody = false;
       bodyBuffer.length = 0;
 
-      if (trimmed.startsWith('###')) { continue; }
+      if (trimmed.startsWith('###') || trimmed === '---') { continue; }
     }
 
     // @collection dentro de un request = override individual
@@ -291,6 +315,55 @@ function parseRextInternal(content: string): { requests: RextRequest[]; configs:
       const [key, ...valueParts] = trimmed.split(':');
       currentRequest.headers[key.trim()] = valueParts.join(':').trim();
       continue;
+    }
+
+    // @query directive — query params
+    if (!isParsingBody && trimmed.startsWith('@query')) {
+      const queryMatch = trimmed.match(/^@query\s+(\S+)\s*=\s*(.+)/);
+      if (queryMatch) {
+        if (!currentRequest.queryParams) { currentRequest.queryParams = []; }
+        let val = queryMatch[2].trim();
+        const quoteMatch = val.match(/^(['"])(.*)\1$/);
+        if (quoteMatch) { val = quoteMatch[2]; }
+        currentRequest.queryParams.push({ key: queryMatch[1], value: val });
+        continue;
+      }
+    }
+
+    // @body directive — body from file
+    if (!isParsingBody && trimmed.startsWith('@body')) {
+      const bodyMatch = trimmed.match(/^@body\s+(.+)/);
+      if (bodyMatch) {
+        currentRequest.bodyFile = bodyMatch[1].trim();
+        continue;
+      }
+    }
+
+    // @form directive — before body parsing
+    if (!isParsingBody && trimmed.startsWith('@form')) {
+      const fileMatch = trimmed.match(/^@form\s+(\S+)\s*=\s*@file\s+(\S+)(?:\s+(\S+))?/);
+      if (fileMatch) {
+        if (!currentRequest.formData) { currentRequest.formData = []; }
+        currentRequest.formData.push({
+          key: fileMatch[1],
+          value: fileMatch[2],
+          file: { path: fileMatch[2], mime: fileMatch[3] }
+        });
+        continue;
+      }
+      const fieldMatch = trimmed.match(/^@form\s+(\S+)\s*=\s*(.+)/);
+      if (fieldMatch) {
+        if (!currentRequest.formData) { currentRequest.formData = []; }
+        let val = fieldMatch[2].trim();
+        // Strip wrapping quotes: "value" → value, 'value' → value
+        const quoteMatch = val.match(/^(['"])(.*)\1$/);
+        if (quoteMatch) { val = quoteMatch[2]; }
+        currentRequest.formData.push({
+          key: fieldMatch[1],
+          value: val
+        });
+        continue;
+      }
     }
 
     if (!isParsingBody && trimmed === '' && currentRequest.url !== '') {

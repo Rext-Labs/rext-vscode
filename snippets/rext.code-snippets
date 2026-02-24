@@ -88,4 +88,38 @@
     "body": ["@retry ${1:3} delay ${2:500}"],
     "description": "Reintenta la petición N veces con delay en ms",
   },
+  "Body from File": {
+    "prefix": "bodyfile",
+    "body": ["@body ${1:./path/to/file.json}"],
+    "description": "Envía el contenido de un archivo como body",
+  },
+  "Query Param": {
+    "prefix": "query",
+    "body": ["@query ${1:key} = ${2:value}"],
+    "description": "Agrega un query parameter a la URL",
+  },
+  "Form Field": {
+    "prefix": "form",
+    "body": ["@form ${1:field} = ${2:value}"],
+    "description": "Agrega un campo de texto al FormData",
+  },
+  "Form File": {
+    "prefix": "formfile",
+    "body": ["@form ${1:file} = @file ${2:./path/to/file.png}"],
+    "description": "Agrega un archivo al FormData",
+  },
+  "Upload Flow": {
+    "prefix": "upload",
+    "body": [
+      "@name ${1:Upload File}",
+      "POST ${2:{{baseUrl}}/upload}",
+      "",
+      "@form ${3:file} = @file ${4:./path/to/file.png}",
+      "@form ${5:name} = ${6:My File}",
+      "",
+      "@assert status == 200",
+      "$0",
+    ],
+    "description": "Crea una petición POST con upload de archivo via FormData",
+  },
 }

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { generateCode, ExportLanguage } from './codegen';
 
 export class RextResultsPanel {
     public static currentPanel: RextResultsPanel | undefined;
@@ -34,6 +35,25 @@ export class RextResultsPanel {
                             fs.writeFileSync(uri.fsPath, message.body, 'utf-8');
                             vscode.window.showInformationMessage(`Respuesta guardada en ${uri.fsPath}`);
                         }
+                        break;
+                    }
+                    case 'exportCode': {
+                        const lang = message.language as ExportLanguage;
+                        const req = message.request;
+                        // Build a minimal RextRequest-like object for codegen
+                        const fakeRequest: any = {
+                            method: req.method || 'GET',
+                            url: req.url || '',
+                            headers: req.headers || {},
+                            body: req.body,
+                            captures: [],
+                            assertions: [],
+                            startLine: 0,
+                            endLine: 0,
+                        };
+                        const code = generateCode(lang, fakeRequest);
+                        await vscode.env.clipboard.writeText(code);
+                        vscode.window.showInformationMessage(`✅ Código copiado al clipboard`);
                         break;
                     }
                 }

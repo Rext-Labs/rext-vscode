@@ -4,6 +4,27 @@ All notable changes to the **Rext HTTP** extension will be documented in this fi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.6] - 2025-02-24
+
+### Added
+
+- **`@query`** — Directiva para query parameters separados de la URL (`@query key = value`)
+- **`---` delimiter** — Alternativa a `###` para separar requests
+- **Double newline delimiter** — Dos líneas vacías consecutivas separan requests automáticamente
+- **`@body` from file** — Enviar el contenido de un archivo como body (`@body ./data.json`)
+- **Code Export** — Exportar requests como código en 5 lenguajes: cURL, JavaScript (fetch), Go (net/http), Dart (http), Python (requests)
+- **Variable autocompletado** — Al escribir `{{` se muestran las variables disponibles con su scope y valor actual
+- **Variable scope coloring** — Las variables `{{}}` se colorean según su scope (env=verde, session=azul, collection=naranja, global=púrpura, capture=teal, undefined=rojo)
+- **Capture variable recognition** — Variables definidas por `@capture` en el archivo se muestran en teal con línea amarilla ondulada, indicando que están pendientes de ejecución. Aparecen en autocompletado con el request que las define
+- **Directory tree** — El tab Files del sidebar muestra un árbol de directorios como el explorer nativo de VS Code
+- **Group sub-levels** — `@group Auth/Login` crea niveles anidados en el sidebar de colecciones
+- **Snippet `query`** — Autocompletado para `@query`
+
+### Changed
+
+- **CodeLens** — Ahora muestra `▶ Run {nombre}` en vez de solo `▶ {nombre}` para mayor claridad
+- **Panel Export** — Corregido: ahora exporta el body del request (no el body de la respuesta)
+
 ## [0.0.5] - 2025-02-23
 
 ### Added
