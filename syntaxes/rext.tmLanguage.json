@@ -6,6 +6,7 @@
     { "include": "#directives" },
     { "include": "#variables" },
     { "include": "#method_url" },
+    { "include": "#json_body" },
     { "include": "#headers" }
   ],
   "repository": {
@@ -164,7 +165,7 @@
     "method_url": {
       "patterns": [
         {
-          "match": "^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\\s+(\\S+)",
+          "match": "(?i)^(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\\s+(\\S+)",
           "captures": {
             "1": { "name": "keyword.other.unit.rext" },
             "2": { "name": "string.underline.rext" }
@@ -182,6 +183,85 @@
           }
         }
       ]
+    },
+    "json_body": {
+      "patterns": [
+        {
+          "begin": "^\\s*(\\{)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.dictionary.begin.json.rext" }
+          },
+          "end": "^\\s*(\\})",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.dictionary.end.json.rext" }
+          },
+          "name": "meta.embedded.block.json.rext",
+          "patterns": [
+            { "include": "#variables" },
+            { "include": "#json_key_value_string" },
+            { "include": "#json_key_value_other" },
+            { "include": "#json_number" },
+            { "include": "#json_constant" },
+            { "include": "#json_string_value" },
+            {
+              "match": "[{}\\[\\],:]",
+              "name": "punctuation.separator.json.rext"
+            }
+          ]
+        },
+        {
+          "begin": "^\\s*(\\[)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.array.begin.json.rext" }
+          },
+          "end": "^\\s*(\\])",
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.array.end.json.rext" }
+          },
+          "name": "meta.embedded.block.json.rext",
+          "patterns": [
+            { "include": "#variables" },
+            { "include": "#json_key_value_string" },
+            { "include": "#json_key_value_other" },
+            { "include": "#json_number" },
+            { "include": "#json_constant" },
+            { "include": "#json_string_value" },
+            {
+              "match": "[{}\\[\\],:]",
+              "name": "punctuation.separator.json.rext"
+            }
+          ]
+        }
+      ]
+    },
+    "json_key_value_string": {
+      "match": "(\"[^\"]*\")\\s*:\\s*(\"[^\"]*\")",
+      "captures": {
+        "1": { "name": "support.type.property-name.json.rext" },
+        "2": { "name": "string.quoted.double.json.rext" }
+      }
+    },
+    "json_key_value_other": {
+      "match": "(\"[^\"]*\")\\s*:",
+      "captures": {
+        "1": { "name": "support.type.property-name.json.rext" }
+      }
+    },
+    "json_string_value": {
+      "match": "\"[^\"]*\"",
+      "name": "string.quoted.double.json.rext"
+    },
+    "json_number": {
+      "match": "(?<=:|,|\\[)\\s*(-?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)",
+      "captures": {
+        "1": { "name": "constant.numeric.json.rext" }
+      }
+    },
+    "json_constant": {
+      "match": "(?<=:|,|\\[)\\s*(true|false|null)",
+      "captures": {
+        "1": { "name": "constant.language.json.rext" }
+      }
     }
   },
   "scopeName": "source.rext"

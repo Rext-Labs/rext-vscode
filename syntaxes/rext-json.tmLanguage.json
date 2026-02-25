@@ -1,0 +1,4 @@
+{
+  "scopeName": "source.json.rext-env",
+  "patterns": [{ "include": "source.json" }]
+}

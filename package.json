@@ -3,7 +3,7 @@
   "displayName": "Rext HTTP",
   "publisher": "rext-labs",
   "description": "Smart-HTTP Client for VS Code",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -108,6 +108,16 @@
         "language": "rext",
         "scopeName": "source.rext",
         "path": "./syntaxes/rext.tmLanguage.json"
+      },
+      {
+        "language": "rext-env",
+        "scopeName": "source.json.rext-env",
+        "path": "./syntaxes/rext-json.tmLanguage.json"
+      },
+      {
+        "language": "rext-collection",
+        "scopeName": "source.json.rext-env",
+        "path": "./syntaxes/rext-json.tmLanguage.json"
       }
     ],
     "codeLens": [
