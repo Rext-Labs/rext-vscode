@@ -4,6 +4,26 @@ All notable changes to the **Rext HTTP** extension will be documented in this fi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.9] - 2026-02-26
+
+### Added
+
+- **Dynamic Built-in Variables** — 18 new `{{$variable}}` functions resolved at runtime, organized in 6 categories:
+  - **Timestamps** — `{{$timestamp}}`, `{{$timestampMs}}`, `{{$isoTimestamp}}`, `{{$localTimestamp}}`
+  - **Date formatting** — `{{$date}}` with custom format tokens (`YYYY`, `MM`, `DD`, `HH`, `mm`, `ss`, `MMM`, `MMMM`) and day offset (`{{$date:+7:DD/MM/YYYY}}`)
+  - **UUIDs** — `{{$uuid}}`, `{{$guid}}`, `{{$uuidV1}}`, `{{$uuidV4}}`
+  - **Random generators** — `{{$randomInt:min:max}}`, `{{$randomFloat:min:max:precision}}`, `{{$randomString:length}}`, `{{$randomHex:length}}`, `{{$randomEmail}}`, `{{$randomBoolean}}`
+  - **Enum** — `{{$enum:pending,active,closed}}` picks a random value from a list (supports `""` for values with commas)
+  - **Metadata** — `{{$env}}` returns the active environment name
+- **Gold syntax highlighting** — Built-in `$` variables render in gold (#dcdcaa) to distinguish them from user-defined variables
+- **`$` autocomplete trigger** — Typing `{{$` now triggers autocomplete showing all built-in variables with descriptions, examples, and parameter snippets
+- **Built-in ⚡ sidebar section** — Variables panel now shows a 5th root node listing all available dynamic variables with their descriptions
+
+### Changed
+
+- **Extended variable regex** — `{{}}` variable matching now supports `$` prefix and `:` parameters (e.g., `{{$randomInt:1:100}}`)
+- **Variable resolution order** — New priority: Built-in ($) → Session → Collection → Environment → Global
+
 ## [0.0.8] - 2026-02-25
 
 ### Added

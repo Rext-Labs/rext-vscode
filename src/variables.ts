@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { resolveDynamic, isDynamicVariable, DYNAMIC_VARS } from './dynamic-variables';
+import { EnvironmentManager } from './environment';
 
 export type CaptureScope = 'session' | 'collection' | 'env' | 'global';
 
@@ -65,6 +67,15 @@ export class VariableStore {
      * Obtiene una variable. Prioridad: session > collection > env > global > placeholder.
      */
     public static get(key: string): string {
+        // Capa 0: Variables dinámicas built-in ($timestamp, $uuid, etc.)
+        if (key.startsWith('$')) {
+            // $env resolves to the active environment name
+            if (key === '$env') {
+                return EnvironmentManager.getActiveEnvironment() || 'default';
+            }
+            const resolved = resolveDynamic(key);
+            if (resolved !== undefined) { return resolved; }
+        }
         return this.sessionVars[key]
             || this.collectionVars[key]
             || this.envVars[key]
@@ -76,7 +87,8 @@ export class VariableStore {
      * Reemplaza variables {{var}} en un string.
      */
     public static replaceInString(text: string): string {
-        return text.replace(/\{\{(\w+)\}\}/g, (_, key) => this.get(key));
+        // Extended regex: captures {{varName}} and {{$func:param1:param2,...}}
+        return text.replace(/\{\{(\$[\w:.,"' +-]+|\w+)\}\}/g, (_, key) => this.get(key));
     }
 
     // --- Carga / Limpieza de capas ---

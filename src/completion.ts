@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { parseRext } from './parser';
 import { VariableStore } from './variables';
-
+import { DYNAMIC_VARS } from './dynamic-variables';
 import { scanCapturedVars } from './decorations';
 
 export class RextCompletionProvider implements vscode.CompletionItemProvider {
@@ -94,6 +94,21 @@ export class RextCompletionProvider implements vscode.CompletionItemProvider {
             item.insertText = key;
             item.sortText = `4_${key}`;
             item.filterText = key;
+            items.push(item);
+        }
+
+        // Add dynamic built-in variables
+        for (const [name, entry] of Object.entries(DYNAMIC_VARS)) {
+            const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Function);
+            item.detail = `⚡ ${entry.description}`;
+            item.documentation = new vscode.MarkdownString(
+                `**\`${name}\`** ⚡ Built-in\n\n${entry.description}\n\n**Ejemplo:** \`${entry.example}\``
+            );
+            item.insertText = entry.hasParams && entry.paramSnippet
+                ? new vscode.SnippetString(entry.paramSnippet)
+                : name;
+            item.sortText = `5_${name}`;
+            item.filterText = name;
             items.push(item);
         }
 

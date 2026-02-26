@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { VariableStore } from './variables';
+import { isDynamicVariable, getDynamicVarInfo } from './dynamic-variables';
 
 // Color per scope
 const SCOPE_COLORS: Record<string, { color: string; bg: string }> = {
@@ -8,6 +9,7 @@ const SCOPE_COLORS: Record<string, { color: string; bg: string }> = {
     collection: { color: '#ce9178', bg: 'rgba(206,145,120,0.08)' },    // orange
     global: { color: '#c586c0', bg: 'rgba(197,134,192,0.08)' },    // purple
     capture: { color: '#4fc1e9', bg: 'rgba(79,193,233,0.08)' },     // teal/cyan
+    builtin: { color: '#dcdcaa', bg: 'rgba(220,220,170,0.10)' },     // gold
     undefined: { color: '#f44747', bg: 'rgba(244,71,71,0.08)' },      // red
 };
 
@@ -55,6 +57,8 @@ export function scanCapturedVars(text: string): Map<string, { scope: string; sou
 }
 
 function resolveVariableScope(key: string, capturedVars: Map<string, { scope: string; source: string }>): string {
+    // Dynamic built-in variables ($timestamp, $uuid, etc.)
+    if (isDynamicVariable(key)) { return 'builtin'; }
     const scopes = ['session', 'collection', 'env', 'global'] as const;
     for (const scope of scopes) {
         const vars = VariableStore.getScopeVars(scope);
@@ -69,7 +73,7 @@ export function updateDecorations(editor: vscode.TextEditor) {
 
     const text = editor.document.getText();
     const capturedVars = scanCapturedVars(text);
-    const regex = /\{\{(\w+)\}\}/g;
+    const regex = /\{\{(\$[\w:.,"' +-]+|\w+)\}\}/g;
     let match: RegExpExecArray | null;
 
     const braces: vscode.DecorationOptions[] = [];
@@ -95,7 +99,14 @@ export function updateDecorations(editor: vscode.TextEditor) {
         const varEnd = editor.document.positionAt(match.index + 2 + varName.length);
         let hoverMessage: vscode.MarkdownString;
 
-        if (scope === 'capture') {
+        if (scope === 'builtin') {
+            const info = getDynamicVarInfo(varName);
+            hoverMessage = new vscode.MarkdownString(
+                `**\`${varName}\`** ⚡ Built-in\n\n` +
+                `${info?.description || 'Variable dinámica'}\n\n` +
+                `**Ejemplo:** \`${info?.example || ''}\``
+            );
+        } else if (scope === 'capture') {
             const info = capturedVars.get(varName)!;
             hoverMessage = new vscode.MarkdownString(
                 `**\`${varName}\`**\n\n` +

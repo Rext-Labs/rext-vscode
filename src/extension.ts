@@ -519,7 +519,7 @@ export function activate(context: vscode.ExtensionContext) {
     runCurrent, runAll, switchEnv, runFromSidebar, exportRequest, exportFromSidebar, exportToPostman, exportFileToPostman,
     saveListener, diagnosticCollection, diagChangeListener, diagOpenListener, quickFixProvider,
     vscode.languages.registerCodeLensProvider({ language: 'rext' }, codelensProvider),
-    vscode.languages.registerCompletionItemProvider({ language: 'rext' }, new RextCompletionProvider(), ' ', '{'),
+    vscode.languages.registerCompletionItemProvider({ language: 'rext' }, new RextCompletionProvider(), ' ', '{', '$'),
     vscode.languages.registerInlayHintsProvider({ language: 'rext' }, new RextInlayHintsProvider())
   );
 }
