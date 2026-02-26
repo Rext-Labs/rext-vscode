@@ -52,8 +52,20 @@ export class RextResultsPanel {
                             endLine: 0,
                         };
                         const code = generateCode(lang, fakeRequest);
-                        await vscode.env.clipboard.writeText(code);
-                        vscode.window.showInformationMessage(`✅ Código copiado al clipboard`);
+                        if (lang === 'postman') {
+                            const saveUri = await vscode.window.showSaveDialog({
+                                defaultUri: vscode.Uri.file(`${fakeRequest.name || 'request'}.postman_collection.json`),
+                                filters: { 'Postman Collection': ['json'] }
+                            });
+                            if (saveUri) {
+                                const fs = require('fs');
+                                fs.writeFileSync(saveUri.fsPath, code, 'utf-8');
+                                vscode.window.showInformationMessage(`✅ Postman Collection exportada a ${saveUri.fsPath}`);
+                            }
+                        } else {
+                            await vscode.env.clipboard.writeText(code);
+                            vscode.window.showInformationMessage(`✅ Código copiado al clipboard`);
+                        }
                         break;
                     }
                 }

@@ -377,6 +377,12 @@ const DetailView: Component<DetailViewProps> = (props) => {
                       >
                         Python (requests)
                       </div>
+                      <div
+                        class="export-dropdown-item"
+                        onClick={() => exportCode("postman")}
+                      >
+                        📦 Postman Collection
+                      </div>
                     </div>
                   </Show>
                 </div>
@@ -525,6 +531,7 @@ const DetailView: Component<DetailViewProps> = (props) => {
                     style={{
                       "white-space": wordWrap() ? "pre-wrap" : "pre",
                       "word-break": wordWrap() ? "break-all" : "normal",
+                      "overflow-x": wordWrap() ? "hidden" : "auto",
                     }}
                   >
                     <code ref={codeRef} class="language-json" />

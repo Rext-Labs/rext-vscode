@@ -3,7 +3,7 @@
   "displayName": "Rext HTTP",
   "publisher": "rext-labs",
   "description": "Smart-HTTP Client for VS Code",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -39,6 +39,14 @@
       {
         "command": "rext.exportRequest",
         "title": "Rext: Export Request"
+      },
+      {
+        "command": "rext.exportToPostman",
+        "title": "Rext: Export All to Postman Collection"
+      },
+      {
+        "command": "rext.exportFileToPostman",
+        "title": "Rext: Export Current File to Postman Collection"
       }
     ],
     "viewsContainers": {

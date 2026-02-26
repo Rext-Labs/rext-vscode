@@ -4,6 +4,33 @@ All notable changes to the **Rext HTTP** extension will be documented in this fi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.0.8] - 2026-02-25
+
+### Added
+
+- **Postman Collection v2.1 Export** — Export individual requests or entire workspaces as Postman Collections via QuickPick menu or `Rext: Export All to Postman Collection` command
+- **Sidebar Postman Export** — Export entire files, collections, or groups to Postman directly from the sidebar via 📦 buttons and right-click context menus
+- **Postman export from Preview panel** — Added "📦 Postman Collection" option to the Export ▾ dropdown in the results panel
+- **`@pre` → Postman pre-request scripts** — `@pre` directives are automatically translated to `pm.sendRequest()` pre-request scripts in Postman exports, including headers, body, and `@capture` variable extraction
+- **Missing pre-request detection** — When exporting a request that depends on a `@pre` not in the export set, prompts the user to include it as a separate item in the collection or keep it as an inline `pm.sendRequest()` script
+- **`@capture` → Postman scripts** — Captured variables are automatically converted to `pm.environment.set()`, `pm.globals.set()`, or `pm.collectionVariables.set()` test scripts in exported collections
+- **`@assert` → Postman tests** — Assertions are converted to `pm.test()` with Chai assertions (`pm.response.to.have.status()`, `pm.expect().to.exist`, etc.)
+- **Folder grouping** — Requests with `@group` are organized into nested Postman folders (supports `@group Auth/Login` sub-levels)
+- **Array notation in `@capture`** — `body.data[0].id`, `body.items[2].name` now work correctly for extracting values from arrays
+- **Timeline collapse button** — Hamburger menu button (☰) in the Timeline header to collapse/expand the sidebar for more viewing space
+
+### Fixed
+
+- **`@pre` inlay hints in doc comments** — `@pre` hints now show inside `/** */` comment blocks (previously only worked on standalone lines)
+- **Preview panel scroll** — Fixed horizontal scrollbar always showing on JSON/text content; now respects Word Wrap toggle (`overflow-x: hidden` when wrap ON, `auto` when OFF)
+- **Pre element overflow** — Added `max-width: 100%` and `box-sizing: border-box` to prevent content from exceeding panel width
+
+### Changed
+
+- **`@pre` autocomplete UX** — Now shows the request **name** prominently with the ID as secondary text (previously showed ID first). Searching works by both name and ID. Icon changed to Method (purple cube) for better visibility
+- **Timeline width reduced** — Timeline sidebar reduced from 280px to 196px (~30% smaller) for more content space
+- **Timeline collapse animation** — Smooth CSS transition when collapsing/expanding the timeline
+
 ## [0.0.7] - 2026-02-25
 
 ### Added

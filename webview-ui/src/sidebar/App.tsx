@@ -58,11 +58,20 @@ const App: Component = () => {
       filePath: file,
       requestIndex: idx,
     });
+  const exportFileToPostman = (file: string) =>
+    vscode.postMessage({ command: "exportFileToPostman", filePath: file });
+  const exportCollectionToPostman = (name: string) =>
+    vscode.postMessage({
+      command: "exportCollectionToPostman",
+      collectionName: name,
+    });
+  const exportGroupToPostman = (name: string) =>
+    vscode.postMessage({ command: "exportGroupToPostman", groupName: name });
 
   // --- Context Menu ---
   const showContextMenu = (
     e: MouseEvent,
-    type: "file" | "request",
+    type: "file" | "request" | "collection" | "group",
     data: any,
   ) => {
     e.preventDefault();
@@ -468,6 +477,9 @@ const App: Component = () => {
                       <div
                         class="gh"
                         onClick={(e) => toggleNext(e.currentTarget)}
+                        onContextMenu={(e) =>
+                          showContextMenu(e, "group", { groupName: name })
+                        }
                       >
                         <span class="chv open">▶</span>
                         <GroupIcon />
@@ -479,6 +491,16 @@ const App: Component = () => {
                               0,
                             )}
                         </span>
+                        <button
+                          class="play-btn"
+                          title="Export group to Postman"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            exportGroupToPostman(name);
+                          }}
+                        >
+                          📦
+                        </button>
                       </div>
                       <div class="gr">
                         {Object.keys(node.children).length > 0 &&
@@ -512,10 +534,29 @@ const App: Component = () => {
                       <div
                         class="fh"
                         onClick={(e) => toggleNext(e.currentTarget)}
+                        onContextMenu={(e) => {
+                          if (colName !== "Uncollected") {
+                            showContextMenu(e, "collection", {
+                              collectionName: colName,
+                            });
+                          }
+                        }}
                       >
                         <span class="chv open">▶</span>
                         <span class="fn">{escHtml(colName as string)}</span>
                         <span class="rc">{(items as any[]).length}</span>
+                        <Show when={colName !== "Uncollected"}>
+                          <button
+                            class="play-btn"
+                            title="Export to Postman"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              exportCollectionToPostman(colName as string);
+                            }}
+                          >
+                            📦
+                          </button>
+                        </Show>
                       </div>
                       <div class="fr">
                         {renderGroupedItems(items as ReqItem[])}
@@ -698,6 +739,16 @@ const App: Component = () => {
               >
                 ➕ New Request
               </div>
+              <div class="ctx-sep" />
+              <div
+                class="ctx-item"
+                onClick={() => {
+                  exportFileToPostman(menu().filePath);
+                  setCtxMenu(null);
+                }}
+              >
+                📦 Export to Postman
+              </div>
             </Show>
             <Show when={menu().type === "request"}>
               <div
@@ -756,6 +807,28 @@ const App: Component = () => {
                 }}
               >
                 📋 Export as Code
+              </div>
+            </Show>
+            <Show when={menu().type === "collection"}>
+              <div
+                class="ctx-item"
+                onClick={() => {
+                  exportCollectionToPostman(menu().collectionName);
+                  setCtxMenu(null);
+                }}
+              >
+                📦 Export to Postman
+              </div>
+            </Show>
+            <Show when={menu().type === "group"}>
+              <div
+                class="ctx-item"
+                onClick={() => {
+                  exportGroupToPostman(menu().groupName);
+                  setCtxMenu(null);
+                }}
+              >
+                📦 Export to Postman
               </div>
             </Show>
           </div>

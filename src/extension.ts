@@ -8,8 +8,9 @@ import { VariableStore } from './variables';
 import { RextSidebarProvider } from './sidebar-webview';
 import { RextCompletionProvider } from './completion';
 import { RextInlayHintsProvider } from './inlay-hints';
-import { generateCode, ExportLanguage } from './codegen';
+import { generateCode, ExportLanguage, toPostmanCollection, findMissingPreRequestIds } from './codegen';
 import { activateDecorations } from './decorations';
+import { parseRextFull } from './parser';
 
 function generateId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -18,6 +19,77 @@ function generateId(): string {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
+}
+
+/**
+ * Scans workspace for @pre IDs in `requests` not already present,
+ * prompts user to include them, and merges them into the array.
+ */
+async function resolveMissingPreRequests(exportSet: any[], allAvailable?: any[]): Promise<void> {
+  console.log('[Postman Export] resolveMissingPreRequests called with', exportSet.length, 'requests in export set');
+  for (const r of exportSet) {
+    console.log(`  → [${r.id || 'no-id'}] ${r.name || r.method + ' ' + r.url} | preRequestIds:`, r.preRequestIds || 'NONE');
+  }
+
+  const missingIds = findMissingPreRequestIds(exportSet);
+  console.log('[Postman Export] Missing pre-request IDs:', missingIds);
+  if (missingIds.length === 0) {
+    console.log('[Postman Export] No missing IDs — skipping prompt');
+    return;
+  }
+
+  // First look in allAvailable (same file), then fall back to workspace scan
+  const found: { id: string; name: string; req: any }[] = [];
+  const remainingIds = [...missingIds];
+
+  if (allAvailable) {
+    for (const r of allAvailable) {
+      const idx = remainingIds.indexOf(r.id);
+      if (r.id && idx !== -1) {
+        console.log('[Postman Export] Found pre-request in same file:', r.id, r.name);
+        found.push({ id: r.id, name: r.name || `${r.method} ${r.url}`, req: r });
+        remainingIds.splice(idx, 1);
+      }
+    }
+  }
+
+  // Scan workspace for any still missing
+  if (remainingIds.length > 0) {
+    const rextFiles = await vscode.workspace.findFiles('**/*.rext', '**/node_modules/**');
+    console.log('[Postman Export] Scanning', rextFiles.length, 'workspace files for IDs:', remainingIds);
+    const fs = require('fs');
+    for (const fileUri of rextFiles) {
+      try {
+        const content = fs.readFileSync(fileUri.fsPath, 'utf-8');
+        VariableStore.loadCollection(fileUri.fsPath);
+        const { requests: fileReqs } = parseRextFull(content);
+        for (const r of fileReqs) {
+          if (r.id && remainingIds.includes(r.id)) {
+            console.log('[Postman Export] Found pre-request in workspace:', r.id, r.name, 'in', fileUri.fsPath);
+            found.push({ id: r.id, name: r.name || `${r.method} ${r.url}`, req: r });
+          }
+        }
+      } catch { /* skip */ }
+    }
+  }
+
+  console.log('[Postman Export] Total found:', found.length);
+  if (found.length === 0) return;
+
+  const names = found.map(f => `• ${f.name} (${f.id})`).join('\n');
+  const answer = await vscode.window.showInformationMessage(
+    `Se encontraron ${found.length} pre-request(s) no incluidos:\n${names}\n\n¿Incluirlos en la exportación?`,
+    { modal: true },
+    'Sí, incluir',
+    'No, solo pm.sendRequest()'
+  );
+
+  console.log('[Postman Export] User answer:', answer);
+  if (answer === 'Sí, incluir') {
+    for (const f of found) {
+      exportSet.unshift(f.req);
+    }
+  }
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -173,12 +245,32 @@ export function activate(context: vscode.ExtensionContext) {
       { label: '$(code) Go (net/http)', lang: 'go' as ExportLanguage },
       { label: '$(symbol-class) Dart (http)', lang: 'dart' as ExportLanguage },
       { label: '$(symbol-variable) Python (requests)', lang: 'python' as ExportLanguage },
+      { label: '$(package) Postman Collection', lang: 'postman' as ExportLanguage },
     ], { placeHolder: '📋 Exportar como...' });
 
     if (picked) {
-      const code = generateCode(picked.lang, request);
-      await vscode.env.clipboard.writeText(code);
-      vscode.window.showInformationMessage(`✅ Código ${picked.label.replace(/\$\([^)]+\)\s*/, '')} copiado al clipboard`);
+      if (picked.lang === 'postman') {
+        // For single request export, check pre-requests against just this request
+        const exportSet = [request];
+        await resolveMissingPreRequests(exportSet, requests);
+        // If pre-requests were included, generate full collection; otherwise single item
+        const code = exportSet.length > 1
+          ? JSON.stringify(toPostmanCollection(exportSet, request.name || 'Collection'), null, 2)
+          : generateCode('postman', request, exportSet);
+        const uri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(`${request.name || 'request'}.postman.json`),
+          filters: { 'Postman Collection': ['json'] }
+        });
+        if (uri) {
+          const fs = require('fs');
+          fs.writeFileSync(uri.fsPath, code, 'utf-8');
+          vscode.window.showInformationMessage(`✅ Postman item exportado a ${uri.fsPath}`);
+        }
+      } else {
+        const code = generateCode(picked.lang, request);
+        await vscode.env.clipboard.writeText(code);
+        vscode.window.showInformationMessage(`✅ Código ${picked.label.replace(/\$\([^)]+\)\s*/, '')} copiado al clipboard`);
+      }
     }
   });
 
@@ -199,15 +291,109 @@ export function activate(context: vscode.ExtensionContext) {
         { label: '$(code) Go (net/http)', lang: 'go' as ExportLanguage },
         { label: '$(symbol-class) Dart (http)', lang: 'dart' as ExportLanguage },
         { label: '$(symbol-variable) Python (requests)', lang: 'python' as ExportLanguage },
+        { label: '$(package) Postman Collection', lang: 'postman' as ExportLanguage },
       ], { placeHolder: '📋 Exportar como...' });
 
       if (picked) {
-        const code = generateCode(picked.lang, request);
-        await vscode.env.clipboard.writeText(code);
-        vscode.window.showInformationMessage(`✅ Código ${picked.label.replace(/\$\([^)]+\)\s*/, '')} copiado al clipboard`);
+        if (picked.lang === 'postman') {
+          const exportSet = [request];
+          await resolveMissingPreRequests(exportSet, requests);
+          const code = exportSet.length > 1
+            ? JSON.stringify(toPostmanCollection(exportSet, request.name || 'Collection'), null, 2)
+            : generateCode('postman', request, exportSet);
+          const uri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(`${request.name || 'request'}.postman.json`),
+            filters: { 'Postman Collection': ['json'] }
+          });
+          if (uri) {
+            const fs = require('fs');
+            fs.writeFileSync(uri.fsPath, code, 'utf-8');
+            vscode.window.showInformationMessage(`✅ Postman item exportado a ${uri.fsPath}`);
+          }
+        } else {
+          const code = generateCode(picked.lang, request);
+          await vscode.env.clipboard.writeText(code);
+          vscode.window.showInformationMessage(`✅ Código ${picked.label.replace(/\$\([^)]+\)\s*/, '')} copiado al clipboard`);
+        }
       }
     } catch (err: any) {
       vscode.window.showErrorMessage(`Error: ${err.message}`);
+    }
+  });
+
+  // --- COMANDO 7: Exportar TODO a Postman Collection ---
+  const exportToPostman = vscode.commands.registerCommand('rext.exportToPostman', async () => {
+    const rextFiles = await vscode.workspace.findFiles('**/*.rext', '**/node_modules/**');
+    if (rextFiles.length === 0) {
+      vscode.window.showWarningMessage('No se encontraron archivos .rext en el workspace.');
+      return;
+    }
+
+    EnvironmentManager.loadActiveEnvironment();
+
+    const allRequests: any[] = [];
+    const allConfigs: any[] = [];
+
+    for (const fileUri of rextFiles) {
+      const doc = await vscode.workspace.openTextDocument(fileUri);
+      VariableStore.loadCollection(fileUri.fsPath);
+      const { requests, configs } = parseRextFull(doc.getText());
+      requests.forEach(r => (r as any)._filePath = fileUri.fsPath);
+      allRequests.push(...requests);
+      allConfigs.push(...configs);
+    }
+
+    const workspaceName = vscode.workspace.name || 'Rext Collection';
+    const collection = toPostmanCollection(allRequests, workspaceName, allConfigs);
+    const json = JSON.stringify(collection, null, 2);
+
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(`${workspaceName}.postman_collection.json`),
+      filters: { 'Postman Collection': ['json'] }
+    });
+
+    if (uri) {
+      const fs = require('fs');
+      fs.writeFileSync(uri.fsPath, json, 'utf-8');
+      vscode.window.showInformationMessage(`✅ ${allRequests.length} requests exportados a Postman Collection`);
+    }
+  });
+
+  // --- COMANDO 8: Exportar archivo actual a Postman Collection ---
+  const exportFileToPostman = vscode.commands.registerCommand('rext.exportFileToPostman', async () => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.document.languageId !== 'rext') {
+      vscode.window.showWarningMessage('Abre un archivo .rext para exportar.');
+      return;
+    }
+
+    EnvironmentManager.loadActiveEnvironment();
+    VariableStore.loadCollection(editor.document.uri.fsPath);
+
+    const { requests, configs } = parseRextFull(editor.document.getText());
+    requests.forEach(r => (r as any)._filePath = editor.document.uri.fsPath);
+
+    if (requests.length === 0) {
+      vscode.window.showWarningMessage('No se encontraron requests en el archivo.');
+      return;
+    }
+
+    // Resolve missing @pre requests
+    await resolveMissingPreRequests(requests);
+
+    const fileName = editor.document.uri.fsPath.split('/').pop()?.replace('.rext', '') || 'Collection';
+    const collection = toPostmanCollection(requests, fileName, configs);
+    const json = JSON.stringify(collection, null, 2);
+
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.file(`${fileName}.postman_collection.json`),
+      filters: { 'Postman Collection': ['json'] }
+    });
+
+    if (uri) {
+      const fs = require('fs');
+      fs.writeFileSync(uri.fsPath, json, 'utf-8');
+      vscode.window.showInformationMessage(`✅ ${requests.length} requests exportados a Postman Collection`);
     }
   });
 
@@ -330,7 +516,7 @@ export function activate(context: vscode.ExtensionContext) {
   const codelensProvider = new RextCodeLensProvider();
 
   context.subscriptions.push(
-    runCurrent, runAll, switchEnv, runFromSidebar, exportRequest, exportFromSidebar,
+    runCurrent, runAll, switchEnv, runFromSidebar, exportRequest, exportFromSidebar, exportToPostman, exportFileToPostman,
     saveListener, diagnosticCollection, diagChangeListener, diagOpenListener, quickFixProvider,
     vscode.languages.registerCodeLensProvider({ language: 'rext' }, codelensProvider),
     vscode.languages.registerCompletionItemProvider({ language: 'rext' }, new RextCompletionProvider(), ' ', '{'),

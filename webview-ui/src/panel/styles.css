@@ -26,12 +26,42 @@ body {
 
 /* Sidebar */
 .sidebar {
-  width: 280px;
+  width: 196px;
   border-right: 1px solid var(--border);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+.sidebar.collapsed {
+  width: 36px;
+  overflow: hidden;
+}
+.sidebar.collapsed .history-item,
+.sidebar.collapsed > div:last-child {
+  display: none;
+}
+.sidebar.collapsed .history-header > span,
+.sidebar.collapsed .btn-clear {
+  display: none;
+}
+.sidebar.collapsed .history-header {
+  justify-content: center;
+  padding: 12px 6px;
+}
+.sidebar-toggle {
+  background: none;
+  border: none;
+  color: var(--fg);
+  cursor: pointer;
+  padding: 0 6px;
+  font-size: 14px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.sidebar-toggle:hover {
+  opacity: 1;
 }
 
 .history-header {
@@ -345,6 +375,9 @@ pre {
   margin: 0;
   padding: 10px !important;
   border-radius: 4px !important;
+  overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 mark {
   background: #ffeb3b;

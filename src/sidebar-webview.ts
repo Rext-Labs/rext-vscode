@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { parseRext, parseRextFull } from './parser';
+import { parseRext, parseRextFull, RextRequest, RextConfig } from './parser';
 import { VariableStore } from './variables';
 import { EnvironmentManager } from './environment';
 import { RextResultsPanel } from './panel';
+import { toPostmanCollection, findMissingPreRequestIds } from './codegen';
 
 interface HistoryEntry {
     id?: string;
@@ -164,6 +165,69 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
                     this.refresh();
                     break;
                 }
+                case 'exportCollectionToPostman': {
+                    await this._exportFilteredToPostman(
+                        r => r.collection === msg.collectionName,
+                        msg.collectionName || 'Collection'
+                    );
+                    break;
+                }
+                case 'exportGroupToPostman': {
+                    await this._exportFilteredToPostman(
+                        (r: RextRequest) => r.group === msg.groupName || !!(r.group && r.group.startsWith(msg.groupName + '/')),
+                        msg.groupName || 'Group'
+                    );
+                    break;
+                }
+                case 'exportFileToPostman': {
+                    const fp = msg.filePath;
+                    EnvironmentManager.loadActiveEnvironment();
+                    VariableStore.loadCollection(fp);
+                    const content = fs.readFileSync(fp, 'utf-8');
+                    const { requests: reqs, configs: cfgs } = parseRextFull(content);
+
+                    // Resolve missing @pre requests
+                    const missingIds = findMissingPreRequestIds(reqs);
+                    if (missingIds.length > 0) {
+                        const allFiles = await vscode.workspace.findFiles('**/*.rext', '**/node_modules/**');
+                        const found: RextRequest[] = [];
+                        for (const u of allFiles) {
+                            try {
+                                const c = fs.readFileSync(u.fsPath, 'utf-8');
+                                VariableStore.loadCollection(u.fsPath);
+                                const { requests: rr } = parseRextFull(c);
+                                for (const r of rr) {
+                                    if (r.id && missingIds.includes(r.id)) found.push(r);
+                                }
+                            } catch { /* skip */ }
+                        }
+                        if (found.length > 0) {
+                            const names = found.map(f => `• ${f.name || f.method + ' ' + f.url} (${f.id})`).join('\n');
+                            const answer = await vscode.window.showInformationMessage(
+                                `Se encontraron ${found.length} pre-request(s) externos:\n${names}\n\n¿Incluirlos en la exportación?`,
+                                { modal: true },
+                                'Sí, incluir',
+                                'No, solo pm.sendRequest()'
+                            );
+                            if (answer === 'Sí, incluir') {
+                                for (const f of found) { reqs.unshift(f); }
+                            }
+                        }
+                    }
+
+                    const fName = path.basename(fp, '.rext');
+                    const col = toPostmanCollection(reqs, fName, cfgs);
+                    const json = JSON.stringify(col, null, 2);
+                    const uri = await vscode.window.showSaveDialog({
+                        defaultUri: vscode.Uri.file(`${fName}.postman_collection.json`),
+                        filters: { 'Postman Collection': ['json'] }
+                    });
+                    if (uri) {
+                        fs.writeFileSync(uri.fsPath, json, 'utf-8');
+                        vscode.window.showInformationMessage(`✅ ${reqs.length} requests exportados a Postman`);
+                    }
+                    break;
+                }
             }
         });
     }
@@ -299,6 +363,73 @@ export class RextSidebarProvider implements vscode.WebviewViewProvider {
         await vscode.workspace.applyEdit(edit);
         await doc.save();
         this.refresh();
+    }
+
+    private async _exportFilteredToPostman(filter: (r: RextRequest) => boolean, name: string) {
+        const uris = await vscode.workspace.findFiles('**/*.rext', '**/node_modules/**');
+        const allRequests: RextRequest[] = [];
+        const allConfigs: RextConfig[] = [];
+
+        EnvironmentManager.loadActiveEnvironment();
+
+        for (const uri of uris) {
+            try {
+                const content = fs.readFileSync(uri.fsPath, 'utf-8');
+                VariableStore.loadCollection(uri.fsPath);
+                const { requests, configs } = parseRextFull(content);
+                requests.forEach(r => (r as any)._filePath = uri.fsPath);
+                allRequests.push(...requests.filter(filter));
+                allConfigs.push(...configs);
+            } catch { /* skip */ }
+        }
+
+        if (allRequests.length === 0) {
+            vscode.window.showWarningMessage(`No se encontraron requests para "${name}".`);
+            return;
+        }
+
+        // Resolve missing @pre requests
+        const missingIds = findMissingPreRequestIds(allRequests);
+        if (missingIds.length > 0) {
+            // Scan for them in already loaded requests
+            const allWorkspaceReqs: RextRequest[] = [];
+            for (const u of uris) {
+                try {
+                    const c = fs.readFileSync(u.fsPath, 'utf-8');
+                    VariableStore.loadCollection(u.fsPath);
+                    const { requests: rr } = parseRextFull(c);
+                    allWorkspaceReqs.push(...rr);
+                } catch { /* skip */ }
+            }
+            const found = allWorkspaceReqs.filter(r => r.id && missingIds.includes(r.id));
+            if (found.length > 0) {
+                const names = found.map(f => `• ${f.name || f.method + ' ' + f.url} (${f.id})`).join('\n');
+                const answer = await vscode.window.showInformationMessage(
+                    `Se encontraron ${found.length} pre-request(s) externos:\n${names}\n\n¿Incluirlos en la exportación?`,
+                    { modal: true },
+                    'Sí, incluir',
+                    'No, solo pm.sendRequest()'
+                );
+                if (answer === 'Sí, incluir') {
+                    for (const f of found) {
+                        allRequests.unshift(f);
+                    }
+                }
+            }
+        }
+
+        const collection = toPostmanCollection(allRequests, name, allConfigs);
+        const json = JSON.stringify(collection, null, 2);
+
+        const uri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(`${name}.postman_collection.json`),
+            filters: { 'Postman Collection': ['json'] }
+        });
+
+        if (uri) {
+            fs.writeFileSync(uri.fsPath, json, 'utf-8');
+            vscode.window.showInformationMessage(`✅ ${allRequests.length} requests exportados a Postman`);
+        }
     }
 
     private async _getAllCollections(): Promise<string[]> {

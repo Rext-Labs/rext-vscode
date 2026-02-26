@@ -1,7 +1,7 @@
 import { VariableStore } from './variables';
-import { RextRequest } from './parser';
+import { RextRequest, RextConfig } from './parser';
 
-export type ExportLanguage = 'curl' | 'javascript' | 'go' | 'dart' | 'python';
+export type ExportLanguage = 'curl' | 'javascript' | 'go' | 'dart' | 'python' | 'postman';
 
 export interface ResolvedRequest {
     method: string;
@@ -38,7 +38,7 @@ export function resolveRequest(request: RextRequest): ResolvedRequest {
     return { method: request.method, url, headers, body, bodyFile, formData };
 }
 
-export function generateCode(lang: ExportLanguage, request: RextRequest): string {
+export function generateCode(lang: ExportLanguage, request: RextRequest, allRequests?: RextRequest[]): string {
     const resolved = resolveRequest(request);
     switch (lang) {
         case 'curl': return toCurl(resolved);
@@ -46,7 +46,365 @@ export function generateCode(lang: ExportLanguage, request: RextRequest): string
         case 'go': return toGo(resolved);
         case 'dart': return toDart(resolved);
         case 'python': return toPython(resolved);
+        case 'postman': {
+            const item = toPostmanItem(request, allRequests);
+            const collection = {
+                info: {
+                    name: request.name || `${request.method} ${request.url}`,
+                    schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+                },
+                item: [item],
+            };
+            return JSON.stringify(collection, null, 2);
+        }
     }
+}
+
+// ═══ Postman Collection v2.1 ═══
+
+interface PostmanUrl {
+    raw: string;
+    protocol?: string;
+    host: string[];
+    path: string[];
+    query?: { key: string; value: string }[];
+}
+
+function parseUrlForPostman(rawUrl: string): PostmanUrl {
+    // Replace {{var}} with :var for Postman path variables
+    let url = rawUrl;
+
+    // Extract protocol
+    let protocol: string | undefined;
+    const protocolMatch = url.match(/^(https?):\/\//);
+    if (protocolMatch) {
+        protocol = protocolMatch[1];
+        url = url.replace(/^https?:\/\//, '');
+    }
+
+    // Extract query string
+    let query: { key: string; value: string }[] | undefined;
+    const qIdx = url.indexOf('?');
+    if (qIdx !== -1) {
+        const qs = url.substring(qIdx + 1);
+        url = url.substring(0, qIdx);
+        query = qs.split('&').map(p => {
+            const [k, ...v] = p.split('=');
+            return { key: decodeURIComponent(k), value: decodeURIComponent(v.join('=')) };
+        });
+    }
+
+    // Split host and path
+    const parts = url.split('/');
+    const hostStr = parts[0] || '';
+    const host = hostStr.split('.');
+    const path = parts.slice(1).filter(Boolean);
+
+    const result: PostmanUrl = {
+        raw: rawUrl,
+        host,
+        path,
+    };
+    if (protocol) result.protocol = protocol;
+    if (query && query.length > 0) result.query = query;
+    return result;
+}
+
+export function toPostmanItem(request: RextRequest, allRequests?: RextRequest[]): any {
+    const resolved = resolveRequest(request);
+
+    // Build header array
+    const headers = Object.entries(resolved.headers).map(([key, value]) => ({
+        key,
+        value,
+        type: 'text' as const,
+    }));
+
+    // Build body
+    let body: any = undefined;
+    if (resolved.formData && resolved.formData.length > 0) {
+        body = {
+            mode: 'formdata',
+            formdata: resolved.formData.map(f => {
+                if (f.file) {
+                    return { key: f.key, type: 'file', src: f.file.path };
+                }
+                return { key: f.key, value: f.value, type: 'text' };
+            }),
+        };
+    } else if (resolved.body) {
+        const ct = resolved.headers['Content-Type'] || resolved.headers['content-type'] || '';
+        body = {
+            mode: 'raw',
+            raw: resolved.body,
+            options: {
+                raw: {
+                    language: ct.includes('json') ? 'json' : ct.includes('xml') ? 'xml' : 'text',
+                },
+            },
+        };
+    }
+
+    // Build URL with @query params
+    const url = parseUrlForPostman(resolved.url);
+    if (request.queryParams && request.queryParams.length > 0) {
+        const extraQuery = request.queryParams.map(q => ({
+            key: VariableStore.replaceInString(q.key),
+            value: VariableStore.replaceInString(q.value),
+        }));
+        url.query = [...(url.query || []), ...extraQuery];
+    }
+
+    // Build event scripts
+    const events: any[] = [];
+
+    // @pre → pm.sendRequest() in prerequest script
+    const missingPreIds: string[] = [];
+    if (request.preRequestIds && request.preRequestIds.length > 0 && allRequests) {
+        const preLines: string[] = [];
+        for (const preId of request.preRequestIds) {
+            const preReq = allRequests.find(r => r.id === preId);
+            if (preReq) {
+                const preResolved = resolveRequest(preReq);
+                const preName = preReq.name || `${preReq.method} ${preReq.url}`;
+                preLines.push(`// @pre ${preId} → ${preName}`);
+
+                // Build pm.sendRequest options
+                const opts: string[] = [];
+                opts.push(`    url: "${preResolved.url}"`);
+                opts.push(`    method: "${preReq.method.toUpperCase()}"`);
+
+                // Headers
+                const preHeaders = Object.entries(preResolved.headers);
+                if (preHeaders.length > 0) {
+                    const hdrLines = preHeaders.map(([k, v]) => `        { key: "${k}", value: "${v}" }`);
+                    opts.push(`    header: [\n${hdrLines.join(',\n')}\n    ]`);
+                }
+
+                // Body
+                if (preResolved.body) {
+                    const escaped = preResolved.body.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+                    opts.push(`    body: {\n        mode: "raw",\n        raw: "${escaped}"\n    }`);
+                }
+
+                preLines.push(`pm.sendRequest({`);
+                preLines.push(opts.join(',\n'));
+                preLines.push(`}, function (err, res) {`);
+
+                // Auto-set captures from the pre-request
+                if (preReq.captures && preReq.captures.length > 0) {
+                    for (const cap of preReq.captures) {
+                        const pmScope = captureScopeToPm(cap.scope);
+                        const accessor = captureQueryToAccessor(cap.query).replace('pm.response', 'res');
+                        preLines.push(`    ${pmScope}("${cap.variable}", ${accessor});`);
+                    }
+                }
+
+                preLines.push(`});`);
+                preLines.push('');
+            } else {
+                missingPreIds.push(preId);
+            }
+        }
+
+        if (preLines.length > 0) {
+            events.push({
+                listen: 'prerequest',
+                script: {
+                    type: 'text/javascript',
+                    exec: preLines,
+                },
+            });
+        }
+    }
+
+    // @capture + @assert → test script
+    const testLines: string[] = [];
+
+    // @capture → pm.environment.set / pm.collectionVariables.set / pm.globals.set
+    if (request.captures && request.captures.length > 0) {
+        for (const cap of request.captures) {
+            const pmScope = captureScopeToPm(cap.scope);
+            const accessor = captureQueryToAccessor(cap.query);
+            testLines.push(`// @capture ${cap.scope}.${cap.variable} = ${cap.query}`);
+            testLines.push(`${pmScope}("${cap.variable}", ${accessor});`);
+            testLines.push('');
+        }
+    }
+
+    // @assert → pm.test()
+    if (request.assertions && request.assertions.length > 0) {
+        for (const a of request.assertions) {
+            const testScript = assertionToPmTest(a);
+            if (testScript) testLines.push(testScript);
+        }
+    }
+
+    if (testLines.length > 0) {
+        events.push({
+            listen: 'test',
+            script: {
+                type: 'text/javascript',
+                exec: testLines,
+            },
+        });
+    }
+
+    const item: any = {
+        name: request.name || `${request.method} ${request.url}`,
+        request: {
+            method: request.method.toUpperCase(),
+            header: headers,
+            url,
+        },
+    };
+
+    if (body) item.request.body = body;
+    if (events.length > 0) item.event = events;
+
+    // Attach missing pre IDs for the caller to handle
+    if (missingPreIds.length > 0) {
+        item._missingPreIds = missingPreIds;
+    }
+
+    return item;
+}
+
+function captureScopeToPm(scope: string): string {
+    switch (scope) {
+        case 'env': return 'pm.environment.set';
+        case 'global': return 'pm.globals.set';
+        case 'collection': return 'pm.collectionVariables.set';
+        default: return 'pm.variables.set'; // session → local
+    }
+}
+
+function captureQueryToAccessor(query: string): string {
+    // body.access_token → pm.response.json().access_token
+    // body.data.items[0].id → pm.response.json().data.items[0].id
+    // header.Authorization → pm.response.headers.get("Authorization")
+    // status → pm.response.code
+    if (query.startsWith('body.')) {
+        const path = query.substring(5);
+        return `pm.response.json().${path}`;
+    }
+    if (query.startsWith('header.')) {
+        const headerName = query.substring(7);
+        return `pm.response.headers.get("${headerName}")`;
+    }
+    if (query === 'status') {
+        return 'pm.response.code';
+    }
+    return `pm.response.json().${query}`;
+}
+
+function assertionToPmTest(a: { target: string; path?: string; operator: string; expected?: string }): string {
+    const desc = `${a.target}${a.path ? '.' + a.path : ''} ${a.operator}${a.expected ? ' ' + a.expected : ''}`;
+
+    if (a.target === 'status') {
+        if (a.operator === '==') return `pm.test("Status is ${a.expected}", function () { pm.response.to.have.status(${a.expected}); });`;
+        return `pm.test("${desc}", function () { pm.expect(pm.response.code).to.${opToChaiMethod(a.operator, a.expected)}; });`;
+    }
+    if (a.target === 'body' && a.path) {
+        const accessor = `pm.response.json().${a.path}`;
+        if (a.operator === 'exists') return `pm.test("${desc}", function () { pm.expect(${accessor}).to.exist; });`;
+        if (a.operator === '!exists') return `pm.test("${desc}", function () { pm.expect(${accessor}).to.be.undefined; });`;
+        if (a.operator === 'isArray') return `pm.test("${desc}", function () { pm.expect(${accessor}).to.be.an('array'); });`;
+        if (a.operator === 'contains') return `pm.test("${desc}", function () { pm.expect(${accessor}).to.include(${JSON.stringify(a.expected)}); });`;
+        if (a.operator === '==') return `pm.test("${desc}", function () { pm.expect(${accessor}).to.eql(${JSON.stringify(a.expected)}); });`;
+        return `pm.test("${desc}", function () { pm.expect(${accessor}).to.${opToChaiMethod(a.operator, a.expected)}; });`;
+    }
+    if (a.target === 'duration' && a.operator === '<' && a.expected) {
+        return `pm.test("Response time < ${a.expected}ms", function () { pm.expect(pm.response.responseTime).to.be.below(${a.expected}); });`;
+    }
+    return `pm.test("${desc}", function () { /* TODO: manual assertion */ });`;
+}
+
+function opToChaiMethod(op: string, expected?: string): string {
+    const val = expected !== undefined ? JSON.stringify(expected) : 'undefined';
+    switch (op) {
+        case '==': return `eql(${val})`;
+        case '!=': return `not.eql(${val})`;
+        case '>': return `be.above(${val})`;
+        case '<': return `be.below(${val})`;
+        case '>=': return `be.at.least(${val})`;
+        case '<=': return `be.at.most(${val})`;
+        default: return `eql(${val})`;
+    }
+}
+
+export function toPostmanCollection(requests: RextRequest[], collectionName: string, configs?: RextConfig[]): any {
+    // Group by @group for folders
+    const rootItems: any[] = [];
+    const folders = new Map<string, any[]>();
+
+    for (const req of requests) {
+        const item = toPostmanItem(req, requests);
+        if (req.group) {
+            if (!folders.has(req.group)) folders.set(req.group, []);
+            folders.get(req.group)!.push(item);
+        } else {
+            rootItems.push(item);
+        }
+    }
+
+    // Build folder items
+    const allItems: any[] = [];
+    for (const [groupName, groupItems] of folders) {
+        // Support nested groups: "Auth/Login" → nested folders
+        const parts = groupName.split('/');
+        let current = allItems;
+        for (let i = 0; i < parts.length; i++) {
+            const name = parts[i].trim();
+            let folder = current.find((f: any) => f.name === name && f.item);
+            if (!folder) {
+                folder = { name, item: [] };
+                current.push(folder);
+            }
+            current = folder.item;
+        }
+        current.push(...groupItems);
+    }
+    allItems.push(...rootItems);
+
+    // Extract variables from @config baseUrl
+    const variables: any[] = [];
+    if (configs) {
+        for (const cfg of configs) {
+            if (cfg.baseUrl) {
+                variables.push({ key: 'baseUrl', value: cfg.baseUrl, type: 'string' });
+                break;
+            }
+        }
+    }
+
+    return {
+        info: {
+            name: collectionName,
+            schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+        },
+        item: allItems,
+        ...(variables.length > 0 ? { variable: variables } : {}),
+    };
+}
+
+/**
+ * Finds @pre IDs in `requests` that reference requests NOT present in the same array.
+ * Returns the unique set of missing IDs.
+ */
+export function findMissingPreRequestIds(requests: RextRequest[]): string[] {
+    const ids = new Set(requests.map(r => r.id).filter(Boolean));
+    const missing = new Set<string>();
+    for (const req of requests) {
+        if (req.preRequestIds) {
+            for (const preId of req.preRequestIds) {
+                if (!ids.has(preId)) {
+                    missing.add(preId);
+                }
+            }
+        }
+    }
+    return Array.from(missing);
 }
 
 // ═══ cURL ═══

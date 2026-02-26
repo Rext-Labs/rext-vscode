@@ -20,6 +20,25 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Parse access path supporting array notation:
+ * "body.data[0].id" → ["body", "data", 0, "id"]
+ * "body.items[2].name" → ["body", "items", 2, "name"]
+ */
+function parseAccessPath(path: string): (string | number)[] {
+  const segments: (string | number)[] = [];
+  for (const part of path.split('.')) {
+    const bracketMatch = part.match(/^([^\[]+)\[(\d+)\]$/);
+    if (bracketMatch) {
+      segments.push(bracketMatch[1]);
+      segments.push(parseInt(bracketMatch[2], 10));
+    } else {
+      segments.push(part);
+    }
+  }
+  return segments;
+}
+
 async function executeRequest(method: string, url: string, data: any, headers: Record<string, string>, timeout?: number) {
   return axios({
     method,
@@ -151,9 +170,11 @@ export async function runRequest(request: RextRequest, allRequests?: RextRequest
           }
           // Resolver path del response (body.path.to.value)
           else if (response.data) {
-            value = trimmedQuery.split('.').reduce((obj, key) => {
-              if (key === 'body') { return obj; }
-              return obj && obj[key] !== undefined ? obj[key] : undefined;
+            // Parse path supporting array notation: body.data[0].id, body.items[2].name
+            const segments = parseAccessPath(trimmedQuery);
+            value = segments.reduce((obj: any, seg: string | number) => {
+              if (seg === 'body') { return obj; }
+              return obj != null ? obj[seg] : undefined;
             }, response.data);
           }
 

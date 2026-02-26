@@ -10,13 +10,30 @@ interface TimelineProps {
 }
 
 const Timeline: Component<TimelineProps> = (props) => {
+  let sidebarRef: HTMLDivElement | undefined;
+
+  const toggleCollapse = () => {
+    sidebarRef?.classList.toggle("collapsed");
+  };
+
   return (
-    <div class="sidebar">
+    <div class="sidebar" ref={sidebarRef}>
       <div class="history-header">
         <span>Timeline</span>
-        <button class="btn-clear" onClick={props.onClear}>
-          Clear
-        </button>
+        <div style={{ display: "flex", gap: "4px" }}>
+          <button class="btn-clear" onClick={props.onClear}>
+            Clear
+          </button>
+          <button
+            class="sidebar-toggle"
+            onClick={toggleCollapse}
+            title="Toggle Timeline"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div>
         <For each={props.history}>

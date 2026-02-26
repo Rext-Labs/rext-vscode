@@ -9,6 +9,7 @@ export class RextInlayHintsProvider implements vscode.InlayHintsProvider {
     async provideInlayHints(document: vscode.TextDocument, range: vscode.Range): Promise<vscode.InlayHint[]> {
         // Build map of all request IDs across workspace
         await this._buildRequestMap();
+        console.log(`[Rext InlayHints] Request map has ${this._requestMap.size} entries`);
 
         const hints: vscode.InlayHint[] = [];
         const text = document.getText();
@@ -16,10 +17,11 @@ export class RextInlayHintsProvider implements vscode.InlayHintsProvider {
 
         for (let i = range.start.line; i <= Math.min(range.end.line, lines.length - 1); i++) {
             const line = lines[i].trim();
-            const match = line.match(/^@pre\s+([a-zA-Z0-9]{6})/);
+            const match = line.match(/^(?:\*\s*)?@pre\s+([a-zA-Z0-9]{6})/);
             if (match) {
                 const refId = match[1];
                 const req = this._requestMap.get(refId);
+                console.log(`[Rext InlayHints] @pre ${refId} → found: ${!!req}, name: ${req?.name}`);
                 if (req) {
                     const name = req.name || `${req.method} ${req.url}`;
                     const pos = new vscode.Position(i, lines[i].length);
@@ -30,6 +32,7 @@ export class RextInlayHintsProvider implements vscode.InlayHintsProvider {
             }
         }
 
+        console.log(`[Rext InlayHints] Returning ${hints.length} hints`);
         return hints;
     }
 

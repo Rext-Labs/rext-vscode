@@ -35,13 +35,13 @@ export class RextCompletionProvider implements vscode.CompletionItemProvider {
 
                 for (const req of requests) {
                     if (!req.id) { continue; }
-                    const label = req.id;
                     const name = req.name || `${req.method} ${req.url}`;
-                    const item = new vscode.CompletionItem(label, vscode.CompletionItemKind.Reference);
-                    item.detail = name;
+                    const item = new vscode.CompletionItem(name, vscode.CompletionItemKind.Method);
+                    item.detail = req.id;
                     item.documentation = new vscode.MarkdownString(`**${name}**\n\n\`${req.method} ${req.url}\`\n\n📄 ${fileName}`);
                     item.insertText = req.id;
                     item.sortText = name;
+                    item.filterText = `${name} ${req.id}`;
                     items.push(item);
                 }
             } catch { /* skip */ }
